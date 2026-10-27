@@ -1,0 +1,11 @@
+# raw footage and API outputs stay local (may contain people / locations)
+data/
+runs/
+*.mp4
+*.mov
+.env
+.env.*
+.omc/
+.claude/
+__pycache__/
+.DS_Store
