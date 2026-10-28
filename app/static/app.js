@@ -4,7 +4,7 @@
 const VIEWS = ["upload", "processing", "results"];
 
 const STAGES = [
-  ["preprocess", "Preparing video", "H.264 · 1280 px long side · one shared timeline"],
+  ["preprocess", "Preparing video", "H.264 · 1920 px long side · one shared timeline"],
   ["sam", "Tracking objects with SAM 3.1", "one request per generic concept, four in parallel"],
   ["classify", "Labeling each track with Muse Spark", "one crop per tracked object"],
   ["inspect", "Inspection agent checking the rules", "the agent re-opens the footage with tools"],

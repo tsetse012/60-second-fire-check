@@ -6,7 +6,7 @@
 
 Wraps the three existing stages behind a single call:
 
-    preprocess (ffmpeg -> H.264, long side 1280, 10 fps, max 3 min)
+    preprocess (ffmpeg -> H.264, long side 1920, 10 fps, max 3 min)
       -> SAM 3.1 tracking      (gate/sam_video_gate.py, concepts in parallel)
       -> track labelling       (pipeline/classify_tracks.py, `person` removed)
       -> inspection agent      (pipeline/inspect_agent.py)
@@ -57,7 +57,7 @@ DEFAULT_CONCEPTS = [
 EXCLUDE_FROM_CLASSIFY = frozenset({"person"})  # privacy: never sent to the labelling model
 DEFAULT_FPS = 10.0
 MAX_SECONDS = 180.0
-TARGET_LONG_SIDE = 1280
+TARGET_LONG_SIDE = 1920  # 1280 shrank a far EXIT sign to 24x14 px (needs_human_check); SAM bills per frame, not pixel
 DEFAULT_MAX_COST = 3.0
 SAM_WORKERS = 4
 PRICE_PER_1K_FRAMES = stage1.PRICE_PER_1K_FRAMES
@@ -193,7 +193,7 @@ def even(n: float) -> int:
 
 
 def preprocess(src: Path, dst: Path, fps: float) -> dict:
-    """Re-encode to H.264 at 1280 px long side and `fps`; returns the new probe.
+    """Re-encode to H.264 at 1920 px long side and `fps`; returns the new probe.
 
     Everything downstream indexes this file, so the frame numbers the SAM model
     reports are the frame numbers the overlay draws on and the report cites.

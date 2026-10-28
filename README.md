@@ -28,7 +28,7 @@ uv run pipeline/run_all.py data/hospital-corridor-static.mp4 --dry-run   # prepr
 uv run pipeline/run_all.py data/clip.mp4 --fps 10 --max-cost 3            # full run
 ```
 
-Preprocessing (H.264, long side 1280, 10 fps, up to 3 minutes) is the one timeline every later stage
+Preprocessing (H.264, long side 1920, 10 fps, up to 3 minutes) is the one timeline every later stage
 indexes: SAM frame numbers, the crops the agent re-cuts and `overlay.mp4` all line up, so a report
 timestamp seeks to the same second in the overlay. Artefacts land in `runs/<id>/` — the stage 1–3
 outputs plus `overlay.mp4` (boxes coloured by label: green fire equipment, red issue, amber needs a
