@@ -49,13 +49,19 @@ import inspect_agent as stage3
 import sam_video_gate as stage1
 
 # Generic concepts only — gate/RESULTS.md showed fire-specific nouns miss on this
-# footage, so stage 2 decides what each track actually is. `exit sign` is the one
-# exception that pays for itself: it is the only concept that catches the green
-# evacuation lights, and `sign` (whose job that used to be) spends 16 IDs per
-# request on name plates (gate/RESULTS.md, 2026-10-28).
+# footage, so stage 2 decides what each track actually is. Two exceptions pay for
+# themselves, both measured on IMG_2559 (runs/20261028-concept-probe, gate/RESULTS.md):
+# `exit sign`, the only concept that catches the green evacuation lights (`sign`, whose
+# job that used to be, spends 16 IDs per request on name plates); `fire hose cabinet`,
+# which catches the silver wall cabinets a walk passes at 48 s and 70 s that `red box`
+# and `door` never tracked; and `standing sign`, which catches the free-standing A-frame
+# boards left in the corridor (wall-mounted signs come with it and stage 2 labels them
+# not_fire_equipment). 11 concepts x 15 windows = 165 requests, but each concept bills
+# the clip once, so the concept list is what the SAM price scales with.
 DEFAULT_CONCEPTS = [
     "exit sign", "red box", "fire extinguisher", "door", "wheelchair",
     "bicycle", "cardboard boxes", "cart", "person",
+    "fire hose cabinet", "standing sign",
 ]
 EXCLUDE_FROM_CLASSIFY = frozenset({"person"})  # privacy: never sent to the labelling model
 DEFAULT_FPS = 10.0
@@ -381,7 +387,8 @@ def read_sse_usage(raw_path: Path) -> tuple[bool, int | None]:
 
 
 def run_sam(job: Job, video: Path, run_dir: Path, concepts: list[str], workers: int,
-            window_frames: int, fps: float, total_frames: int, reparse: bool = False) -> dict:
+            window_frames: int, fps: float, total_frames: int, reparse: bool = False,
+            request_concepts: list[str] | None = None) -> dict:
     """One request per (window x concept); windows are disjoint, so the frames billed are the same.
 
     SAM 3.1 video tracks at most 16 unique objects per request (gate/RESULTS.md),
@@ -392,47 +399,67 @@ def run_sam(job: Job, video: Path, run_dir: Path, concepts: list[str], workers: 
 
     `reparse` rebuilds the stitched tracks and the summary from the saved SSE
     streams without spending a cent — the same escape hatch the later stages have.
+    `request_concepts` narrows what is actually sent: with `reparse` it is the only
+    way to add a concept to an existing run (the old concepts come back from their
+    saved streams, the new ones cost their frames and nothing else). A stream that
+    is already on disk is never requested again, so a half-finished add resumes.
     """
     headers = {"Authorization": f"Bearer {api_key()}"}
     pairs: dict[tuple[str, int], dict] = {}
     file_ids: dict[int, str] = {}
+    fresh = list(request_concepts if request_concepts is not None
+                 else ([] if reparse else concepts))
+    unknown = [c for c in fresh if c not in concepts]
+    if unknown:
+        raise RuntimeError(f"request_concepts not in the job's concepts: {unknown}")
+    todo: list[tuple[dict, str]] = []
     if reparse:
         windows = window_plan(total_frames, window_frames, run_dir / "windows")
         for concept in concepts:
             slug = concept.replace(" ", "_")
             for w in windows:
                 raw = run_dir / f"{slug}.w{w['index']:02d}.sse.jsonl"
-                if not raw.exists():
-                    continue
-                done, processed = read_sse_usage(raw)
-                pairs[(concept, w["index"])] = {
-                    "http_status": 200 if done else None,
-                    "error": None if done else "no completed response in the saved stream",
-                    "seconds_total": None, "seconds_to_first_frame": None,
-                    "frames_processed": processed,
-                    "window": w["index"], "start": w["start"], "end": w["end"]}
+                if raw.exists():  # paid for on an earlier run — free to rebuild
+                    done, processed = read_sse_usage(raw)
+                    pairs[(concept, w["index"])] = {
+                        "http_status": 200 if done else None,
+                        "error": None if done else "no completed response in the saved stream",
+                        "seconds_total": None, "seconds_to_first_frame": None,
+                        "frames_processed": processed,
+                        "window": w["index"], "start": w["start"], "end": w["end"]}
+                elif concept in fresh:  # a concept being added: this window still costs
+                    todo.append((w, concept))
         job.log("sam", "info",
-                f"reparse: {len(windows)} windows x {len(concepts)} concepts from saved "
-                f"SSE files — no request sent")
+                f"reparse: {len(pairs)} saved (window × concept) stream(s) rebuilt, "
+                f"{len(todo)} request(s) left"
+                + (f" — adding: {', '.join(fresh)}" if fresh else ""))
+        if todo:
+            missing = [str(w["path"]) for w in windows if not w["path"].exists()]
+            if missing:
+                raise RuntimeError(f"{len(missing)} window clip(s) are missing, so the new "
+                                   f"concepts cannot be sent: {missing[0]}")
     else:
         windows = split_windows(video, total_frames, window_frames, run_dir / "windows", fps)
         job.log("sam", "info",
                 f"{total_frames} frames → {len(windows)} windows of ≤{window_frames} frames "
                 f"({len(concepts)} concepts = {len(windows) * len(concepts)} requests)")
+        todo = [(w, c) for c in concepts for w in windows]
+
+    # What this run actually pays for; everything else in calls.json came from saved streams.
+    job.data["cost"]["sam_requested_concepts"] = sorted({c for _, c in todo})
+    job.save()
+
+    if todo:
+        def up(w: dict) -> tuple[dict, str]:
+            with httpx.Client(base_url=stage1.BASE_URL, headers=headers) as client:
+                return w, stage1.upload(client, w["path"])
 
         with ThreadPoolExecutor(max_workers=max(1, min(workers, len(windows)))) as pool:
-            futs = {}
-            for w in windows:
-                def up(w=w):
-                    with httpx.Client(base_url=stage1.BASE_URL, headers=headers) as client:
-                        return stage1.upload(client, w["path"])
-                futs[pool.submit(up)] = w
-            for done, fut in enumerate(as_completed(futs), 1):
-                w = futs[fut]
-                file_ids[w["index"]] = fut.result()
+            for done, (w, file_id) in enumerate(pool.map(up, windows), 1):
+                file_ids[w["index"]] = file_id
                 job.log("sam", "info", f"uploaded {w['path'].name} ({done}/{len(windows)})")
-        job.log("sam", "info", f"{len(file_ids)} windows uploaded — {len(concepts)} concepts, "
-                               f"{workers} in parallel")
+        job.log("sam", "info", f"{len(file_ids)} windows uploaded — "
+                               f"{len({c for _, c in todo})} concept(s), {workers} in parallel")
 
         def one(w: dict, concept: str) -> tuple[tuple[str, int], dict]:
             slug = concept.replace(" ", "_")
@@ -447,9 +474,8 @@ def run_sam(job: Job, video: Path, run_dir: Path, concepts: list[str], workers: 
             call.update({"window": w["index"], "start": w["start"], "end": w["end"]})
             return (concept, w["index"]), call
 
-        jobs = [(w, c) for c in concepts for w in windows]
         with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
-            futures = [pool.submit(one, w, c) for w, c in jobs]
+            futures = [pool.submit(one, w, c) for w, c in todo]
             for done, fut in enumerate(as_completed(futures), 1):
                 key, call = fut.result()
                 pairs[key] = call
@@ -457,7 +483,7 @@ def run_sam(job: Job, video: Path, run_dir: Path, concepts: list[str], workers: 
                     job.log("sam", "error",
                             f"{key[0]} w{key[1]:02d} — HTTP {call.get('http_status')}: "
                             f"{str(call.get('error'))[:160]}")
-                job.stage("sam", "running", f"{done}/{len(jobs)} requests")
+                job.stage("sam", "running", f"{done}/{len(todo)} requests")
                 (run_dir / "calls.progress.json").write_text(json.dumps(
                     [{"concept": k[0], **v} for k, v in sorted(pairs.items())], indent=2))
 
@@ -667,11 +693,17 @@ def describe_tool(step: dict) -> str:
 def run_job(job: Job, *, ruleset: Path | None = None, lang: str = "en",
             max_steps: int | None = None, max_tracks: int = 80, overlay: bool = True,
             sam_workers: int = SAM_WORKERS, sam_reparse: bool = False,
-            classify_reparse: bool = False) -> dict:
-    """Run every stage for one job. Never raises: failures land in job.json."""
+            classify_reparse: bool = False, add_concepts: list[str] | None = None) -> dict:
+    """Run every stage for one job. Never raises: failures land in job.json.
+
+    `add_concepts` (with `sam_reparse`) adds concepts to a copied run: their tracks
+    are requested window by window, every other concept comes back from its saved
+    SSE stream, so the SAM bill is those new frames only.
+    """
     ruleset = Path(ruleset or REPO / "rulesets" / "kr-fire.json")
     max_steps = max_steps or stage3.DEFAULT_MAX_STEPS
     run_dir, source = job.dir, job.source
+    fresh_concepts = list(add_concepts or ([] if sam_reparse else job.data["concepts"]))
     try:
         api_key()  # fail before the first byte of work if the key is missing
         job.data["status"] = "running"
@@ -682,7 +714,7 @@ def run_job(job: Job, *, ruleset: Path | None = None, lang: str = "en",
         work = run_dir / "input.mp4"
         meta = preprocess(source, work, job.data["fps"])
         frames = meta["frames"]
-        est = estimate_cost(frames, len(job.data["concepts"]))
+        est = estimate_cost(frames, len(fresh_concepts))
         job.data["cost"]["frames"] = frames
         job.data["cost"]["sam_estimate_usd"] = est
         if est > job.data["cost"]["budget_usd"]:
@@ -693,31 +725,44 @@ def run_job(job: Job, *, ruleset: Path | None = None, lang: str = "en",
         job.log("preprocess", "info",
                 f"{source.name} → {meta['width']}x{meta['height']} H.264 at {job.data['fps']:g} fps, "
                 f"{frames} frames")
+        reused = len(job.data["concepts"]) - len(fresh_concepts)
         job.log("preprocess", "info",
-                f"{len(job.data['concepts'])} concepts x {frames} frames ≈ ${est:.2f} of SAM")
+                f"{len(fresh_concepts)} concept(s) x {frames} frames ≈ ${est:.2f} of SAM"
+                + (f" · {reused} concept(s) reused from saved streams (no charge)" if reused else ""))
 
         # 2. SAM tracking ----------------------------------------------------
         window_frames = max(1, round(job.data["fps"] * job.data["window_s"]))
         job.stage("sam", "running", f"0/{len(job.data['concepts'])} concepts")
         calls = run_sam(job, work, run_dir, job.data["concepts"], sam_workers,
-                        window_frames, job.data["fps"], frames, reparse=sam_reparse)
+                        window_frames, job.data["fps"], frames, reparse=sam_reparse,
+                        request_concepts=fresh_concepts)
         if all(c.get("http_status") != 200 for c in calls.values()):
             raise RuntimeError(f"every SAM request failed: {calls}")
         summary = json.loads((run_dir / "summary.json").read_text())
         # Bill = every frame the model processed (`usage.video_frames_processed`),
         # not the frames that came back with a box on them: the meter counts the
         # whole clip per request, which is 1449 frames even where nothing was found.
-        billed = sum(c.get("frames_processed") or 0 for c in summary["concepts"].values())
-        expected = frames * len(job.data["concepts"])
+        # Only the concepts requested now are charged; the rest were paid for earlier.
+        requested = set(job.data["cost"].get("sam_requested_concepts") or fresh_concepts)
+        billed = sum(c.get("frames_processed") or 0 for concept, c in summary["concepts"].items()
+                     if concept in requested)
+        expected = frames * len(requested)
         job.data["cost"]["frames_billed"] = billed
         job.data["cost"]["frames_expected"] = expected
         job.data["cost"]["sam_actual_usd"] = round(billed / 1000 * PRICE_PER_1K_FRAMES, 3)
         tracks_total = sum(c.get("unique_ids") or 0 for c in summary["concepts"].values())
-        failed = [concept for concept, c in calls.items() if c.get("http_status") != 200]
+        # A concept with no saved stream and nothing requested this run is absent, not
+        # failed: on a reparse that adds two names, the other nine streams exist and the
+        # two prior ones do not, which is not an error worth flagging in the job detail.
+        failed = [concept for concept, c in calls.items()
+                  if concept in requested and c.get("http_status") != 200]
+        absent = [concept for concept in calls if concept not in requested
+                  and calls[concept].get("http_status") is None]
         job.stage("sam", "done",
                   f"{len(calls)} concepts · {tracks_total} tracks · "
                   f"${job.data['cost']['sam_actual_usd']:.2f} of SAM"
-                  + (f" · {len(failed)} concept(s) failed" if failed else ""))
+                  + (f" · {len(failed)} concept(s) failed" if failed else "")
+                  + (f" · {len(absent)} not requested" if absent else ""))
         job.log("sam", "info",
                 f"{tracks_total} track IDs across {len({k for k in calls})} concepts, "
                 f"{billed} of {expected} expected frames billed "
@@ -825,6 +870,12 @@ def main() -> None:
     ap.add_argument("--reparse", action="store_true",
                     help="rebuild the SAM and labelling stages from the saved "
                          "<slug>.w<k>.sse.jsonl and muse_raw/ files in --run (no request, no cost)")
+    ap.add_argument("--add-concepts", default="",
+                    help="comma-separated concepts to add to a copied run; requires --reparse, and only "
+                         "these concepts are requested (their frames are the whole SAM bill)")
+    ap.add_argument("--reclassify", action="store_true",
+                    help="with --reparse: label every track again from freshly cut crops instead of "
+                         "reusing muse_raw (needed after a rule change that moves representative frames)")
     ap.add_argument("--dry-run", action="store_true",
                     help="preprocess + cost estimate only, no API call")
     args = ap.parse_args()
@@ -833,6 +884,10 @@ def main() -> None:
     if not src.exists():
         sys.exit(f"no such video: {src}")
     concepts = [c.strip() for c in args.concepts.split(",") if c.strip()]
+    add = [c.strip() for c in args.add_concepts.split(",") if c.strip()]
+    if add and not args.reparse:
+        sys.exit("--add-concepts reuses the run's saved SAM streams; pass it with --reparse")
+    concepts += [c for c in add if c not in concepts]
 
     if args.dry_run:
         with tempfile.TemporaryDirectory(prefix="firecheck-") as tmp:
@@ -849,7 +904,11 @@ def main() -> None:
                      concepts=concepts, window_s=args.window)
     data = run_job(job, ruleset=args.ruleset, lang=args.lang, max_steps=args.max_steps,
                    max_tracks=args.max_tracks, overlay=not args.no_overlay,
-                   sam_reparse=args.reparse, classify_reparse=args.reparse)
+                   sam_reparse=args.reparse,
+                   # --add-concepts re-labels every track: the new concepts have no saved
+                   # muse_raw, and a changed representative frame invalidates the old crops.
+                   classify_reparse=args.reparse and not add and not args.reclassify,
+                   add_concepts=add)
     print(f"-> {job.dir} · {data['status']}"
           + (f" · {data['error']}" if data["error"] else ""))
     if data["status"] != "done":

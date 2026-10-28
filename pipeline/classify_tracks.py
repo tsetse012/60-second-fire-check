@@ -11,11 +11,11 @@ tracked object actually is.
 
     uv run pipeline/classify_tracks.py --run runs/<run> --video data/<clip>.mp4
 
-Per track: pick the frame where the box is largest, cut a crop (box + 30 %
-margin) and a context image (whole frame with the box drawn), send both to
-`muse-spark-1.3`, save the raw response JSON, then write `classified.json` /
-`classified.md`. `--reparse` rebuilds both from the saved raw responses without
-calling the API.
+Per track: pick the frame where the box is largest *and* the box is not cut off by the
+frame edge (see REP_EDGE_MARGIN), cut a crop (box + 30 % margin) and a context image
+(whole frame with the box drawn), send both to `muse-spark-1.3`, save the raw response
+JSON, then write `classified.json` / `classified.md`. `--reparse` rebuilds both from the
+saved raw responses without calling the API.
 """
 
 from __future__ import annotations
@@ -43,8 +43,16 @@ MODEL = "muse-spark-1.3"
 CROP_MARGIN = 0.30
 CROP_LONG_SIDE = 768
 CONTEXT_LONG_SIDE = 1024
+EXTRACT_BATCH = 48  # frames per ffmpeg select() pass; a 100-term expression fails (exit 244)
 MERGE_IOU = 0.5
 MERGE_FRAME_SHARE = 0.5
+# Which frame a track is labelled from. The largest box is usually the moment the
+# walker passes the object: the box then touches the frame edge and fills the whole
+# picture, so the hardware above it is out of shot (door_24 on the four closed fire
+# doors was cropped to a bare door leaf and came back not_fire_equipment). Prefer the
+# largest box that sits ≥2 % inside every edge and covers ≤60 % of the frame.
+REP_EDGE_MARGIN = 0.02
+REP_MAX_FRAME_SHARE = 0.60
 CLASSIFY_WORKERS = 4  # one crop takes ~6 s of model time; 4 in flight keeps a 40-track run near 60 s
 BOX_COLOR = (255, 0, 255)
 
@@ -102,8 +110,10 @@ Pick exactly one category:
 - smoke_detector: smoke or heat detector head on the ceiling
 - sprinkler_head: sprinkler head / drop
 - fire_alarm_device: manual call point, fire alarm bell, strobe, or alarm panel
-- corridor_obstruction: something parked or stored in the corridor that blocks the way
-  (boxes, bicycle, wheelchair, cart, pallet)
+- corridor_obstruction: something set down on the corridor floor that blocks or narrows
+  the escape route (boxes, bicycle, wheelchair, cart, pallet, and — a common one in
+  Korean corridors — a free-standing sign: standing sign, banner stand, A-frame /
+  sandwich board outside a shop). A sign fixed to a wall or ceiling is not an obstruction.
 - not_fire_equipment: none of the above (air diffuser, ordinary shop door, poster, ...)
 - unclear: the object cannot be told apart at this resolution
 
@@ -131,6 +141,34 @@ def api_key() -> str:
 
 # ---------------------------------------------------------------- tracks
 
+def box_area(box: list[int]) -> int:
+    return (box[2] - box[0]) * (box[3] - box[1])
+
+
+def rep_usable(box: list[int], wh: list[int]) -> bool:
+    """True when the box sits inside the frame with margin and does not fill it.
+
+    A box on the edge is a object the camera has half walked past; a box over 60 %
+    of the frame is a close-up that loses whatever is above it (a door closer, a
+    sign over a cabinet). Neither is good evidence, so they are only used when the
+    track has nothing else.
+    """
+    x1, y1, x2, y2 = box
+    w, h = wh
+    return (x1 >= w * REP_EDGE_MARGIN and y1 >= h * REP_EDGE_MARGIN
+            and x2 <= w * (1 - REP_EDGE_MARGIN) and y2 <= h * (1 - REP_EDGE_MARGIN)
+            and box_area(box) <= REP_MAX_FRAME_SHARE * w * h)
+
+
+def pick_rep_frame(tr: dict) -> tuple[int, list[int], list[int], bool]:
+    """(frame, box, wh, usable) — largest box among frames a label can be read from."""
+    frames = tr["frames"]
+    usable = [f for f in frames if rep_usable(frames[f]["box"], frames[f]["wh"])]
+    pool = usable or sorted(frames)
+    frame = max(pool, key=lambda f: box_area(frames[f]["box"]))
+    return frame, frames[frame]["box"], frames[frame]["wh"], bool(usable)
+
+
 def load_tracks(run: Path) -> dict[tuple[str, int], dict]:
     """(slug, id) -> {frames: {frame: rec}} from the saved SAM text per concept."""
     tracks: dict[tuple[str, int], dict] = {}
@@ -143,12 +181,10 @@ def load_tracks(run: Path) -> dict[tuple[str, int], dict]:
     for key, tr in tracks.items():
         fs = sorted(tr["frames"])
         tr["first"], tr["last"] = fs[0], fs[-1]
-        tr["rep_frame"], tr["rep_box"], tr["wh"] = max(
-            ((f, tr["frames"][f]["box"], tr["frames"][f]["wh"]) for f in fs),
-            key=lambda t: (t[1][2] - t[1][0]) * (t[1][3] - t[1][1]))
-        tr["max_area"] = max(
-            (r["box"][2] - r["box"][0]) * (r["box"][3] - r["box"][1])
-            for r in tr["frames"].values())
+        rep_frame, rep_box, wh, usable = pick_rep_frame(tr)
+        tr["rep_frame"], tr["rep_box"], tr["wh"] = rep_frame, rep_box, wh
+        tr["rep_ok"], tr["rep_area"] = usable, box_area(rep_box)
+        tr["max_area"] = max(box_area(r["box"]) for r in tr["frames"].values())
         tr["key"] = key
     return tracks
 
@@ -170,7 +206,9 @@ def merge_duplicates(tracks: dict[tuple[str, int], dict]) -> dict[tuple[str, int
     `sign` boxes on the same panel), so the test is not concept identity but
     overlap. Two tracks are the same object when IoU > MERGE_IOU in at least
     half of the frames they share (and they share at least 3 frames, which keeps
-    one-frame coincidences out). Rep of a merged group = largest max box.
+    one-frame coincidences out). Rep of a merged group = same preference the
+    frame rule uses: a member with a label-readable frame first, then the largest
+    such box.
     """
     keys = list(tracks)
     parent = {k: k for k in keys}
@@ -199,7 +237,7 @@ def merge_duplicates(tracks: dict[tuple[str, int], dict]) -> dict[tuple[str, int
 
     rep_of: dict[tuple[str, int], tuple[str, int] | None] = {}
     for members in groups.values():
-        rep = max(members, key=lambda k: (tracks[k]["max_area"], k[1], k[0]))
+        rep = max(members, key=lambda k: (tracks[k]["rep_ok"], tracks[k]["rep_area"], k[1], k[0]))
         for m in members:
             rep_of[m] = None if m == rep else rep
     return rep_of
@@ -208,22 +246,33 @@ def merge_duplicates(tracks: dict[tuple[str, int], dict]) -> dict[tuple[str, int
 # ---------------------------------------------------------------- images
 
 def extract_frames(video: Path, frames: list[int], outdir: Path) -> dict[int, Path]:
-    """Pull the given frame numbers out of the video in one ffmpeg pass."""
+    """Pull the given frame numbers out of the video in as few ffmpeg passes as it allows.
+
+    One `select()` expression per batch: past ~100 `eq(n,…)` terms ffmpeg's filter
+    initialisation fails outright ("Cannot allocate memory", exit 244), which a
+    concept-heavy run (110 tracks) hits.
+    """
     outdir.mkdir(parents=True, exist_ok=True)
-    if not frames:
+    wanted = sorted(frames)
+    if not wanted:
         return {}
-    expr = "+".join(f"eq(n\\,{f})" for f in frames)
-    pattern = outdir / "f%05d.png"
-    subprocess.run(
-        ["ffmpeg", "-v", "error", "-y", "-i", str(video),
-         "-vf", f"select='{expr}'", "-fps_mode", "passthrough", "-compression_level", "1",
-         str(pattern)],
-        check=True, capture_output=True, text=True,
-    )
-    produced = sorted(outdir.glob("f*.png"))
-    if len(produced) != len(frames):
-        sys.exit(f"ffmpeg produced {len(produced)} frames, expected {len(frames)}")
-    return dict(zip(sorted(frames), produced))
+    out: dict[int, Path] = {}
+    for i in range(0, len(wanted), EXTRACT_BATCH):
+        chunk = wanted[i:i + EXTRACT_BATCH]
+        sub = outdir / f"b{i // EXTRACT_BATCH:03d}"
+        sub.mkdir(parents=True, exist_ok=True)
+        expr = "+".join(f"eq(n\\,{f})" for f in chunk)
+        subprocess.run(
+            ["ffmpeg", "-v", "error", "-y", "-i", str(video),
+             "-vf", f"select='{expr}'", "-fps_mode", "passthrough", "-compression_level", "1",
+             str(sub / "f%05d.png")],
+            check=True, capture_output=True, text=True,
+        )
+        produced = sorted(sub.glob("f*.png"))
+        if len(produced) != len(chunk):
+            sys.exit(f"ffmpeg produced {len(produced)} frames, expected {len(chunk)}")
+        out.update(zip(chunk, produced))
+    return out
 
 
 def scale_box(box: list[int], wh: list[int], im: Image.Image) -> list[int]:

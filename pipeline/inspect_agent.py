@@ -432,10 +432,13 @@ Rules of evidence
    parked in a corridor or in front of an exit is itself the violation (법 제16조제1항제2호 forbids
    storing things in or placing obstacles around escape facilities). If such an object is clearly in the
    corridor, status=issue; if you cannot tell whether it sits in the corridor or inside a room,
-   needs_human_check.
+   needs_human_check. A free-standing sign, banner stand or A-frame board left on the corridor floor
+   counts the same way: if stage 2 labelled any track `corridor_obstruction`, look at it once
+   (view_track) and then file `{PROHIBITIVE_RID}` as issue citing that track — a sign attached to a wall
+   is not that track.
 8. Door state is measured for you, not for you to judge again. Every track stage 2 labelled fire_door carries
-   door_state, the answer of {door_checks} independent single-question checks on that track's largest frame
-   (list_tracks / view_track show it as e.g. "open ({door_checks}/{door_checks} independent checks)"). Treat it
+   door_state, the answer of {door_checks} independent single-question checks on that track's representative
+   frame (list_tracks / view_track show it as e.g. "open ({door_checks}/{door_checks} independent checks)"). Treat it
    as a fact about the footage:
    - open    -> fd_selfclose = issue (a fire door standing open is not self-closing); cite that track.
    - closed  -> ok is allowed when the closer arm looks intact; nothing else about the door is proven.

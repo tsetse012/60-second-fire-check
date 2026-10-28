@@ -1,0 +1,13 @@
+{
+  "video": "IMG_2559.MOV (145 s, portrait, own footage, not committed)",
+  "counted_by": "repo owner, blind (agent results not shown), from 2-second contact sheets, 2026-10-28",
+  "raw_answer": "소화기 7개 (0,4,4,24,24,40,1:14,2:06,2:20) / 소화전함 4개 (0,4,48,1:04) + '1개는 0초에 복도 끝에 보여' / 방화문 열린것 1개 (24) / 닫힌것 4개 (1:18,1:22,1:54,2:02) / 적치물 2개 (0,2:06) / 나머진 모르겠어",
+  "items": {
+    "fire_extinguisher": {"count": 7, "first_seen_s_raw": "0,4,4,24,24,40,1:14,2:06,2:20 (9 times listed for 7 units; ambiguous)"},
+    "fire_hose_cabinet": {"count": 4, "first_seen_s": [0, 4, 48, 64], "note": "0 s = at the far end of the first corridor"},
+    "fire_door_open": {"count": 1, "first_seen_s": [24], "note": "same door the agent reports at 45 s (closest view)"},
+    "fire_door_closed": {"count": 4, "first_seen_s": [78, 82, 114, 122]},
+    "corridor_obstruction": {"count": 2, "first_seen_s": [0, 126], "note": "free-standing A-frame signs in the corridor (pharmacy)"}
+  },
+  "not_counted": ["exit_sign", "smoke_detector", "sprinkler_head"]
+}
