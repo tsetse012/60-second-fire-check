@@ -198,7 +198,11 @@ def preprocess(src: Path, dst: Path, fps: float) -> dict:
     Everything downstream indexes this file, so the frame numbers the SAM model
     reports are the frame numbers the overlay draws on and the report cites.
     """
-    meta = stage1.probe(src)
+    try:
+        meta = stage1.probe(src)
+    except subprocess.CalledProcessError as exc:
+        raise ValueError(f"{src.name} could not be read as a video — ffprobe said: "
+                         f"{(exc.stderr or '').strip().splitlines()[-1][:120]}") from exc
     if meta["duration_s"] > MAX_SECONDS + 0.5:
         raise ValueError(f"{src.name} is {meta['duration_s']:.0f} s — the walk must fit in "
                          f"{MAX_SECONDS / 60:.0f} minutes; trim it first")
