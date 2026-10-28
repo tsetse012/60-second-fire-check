@@ -446,10 +446,15 @@ def ask(client: httpx.Client, body: dict, history: list) -> dict:
     try:
         return post(client, body)
     except ApiError as exc:
-        if exc.status == 400 and "referenced response" in exc.message and body.get("previous_response_id"):
+        broken = "referenced response" in exc.message.lower() or "reasoning item" in exc.message.lower()
+        if exc.status == 400 and broken and body.get("previous_response_id"):
             print("    previous response expired — resending the full transcript statelessly")
             body.pop("previous_response_id")
-            body["input"] = list(history)
+            # Reasoning items point into the stored response that just expired, so
+            # replaying them without the chain is exactly what the API rejects
+            # (`Referenced reasoning item ... was not found or has expired`).
+            # Messages, tool calls and tool outputs are all the conversation needs.
+            body["input"] = [h for h in history if h.get("type") != "reasoning"]
             return post(client, body)
         raise
 

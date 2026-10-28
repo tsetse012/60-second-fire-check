@@ -303,7 +303,9 @@ def stitch_windows(windows: list[dict], per_window: dict[int, dict[int, dict[int
                  for lid, rec in local[first_f].items() for gid, box in prev),
                 reverse=True)
             used_l, used_g = set(), set()
-            for _, lid, gid in pairs:
+            for overlap, lid, gid in pairs:
+                if overlap <= WINDOW_IOU:
+                    break  # sorted, so nothing further can clear the bar either
                 if lid in used_l or gid in used_g:
                     continue
                 mapping[lid] = gid
@@ -663,8 +665,9 @@ def describe_tool(step: dict) -> str:
 
 
 def run_job(job: Job, *, ruleset: Path | None = None, lang: str = "en",
-            max_steps: int | None = None, max_tracks: int = 60, overlay: bool = True,
-            sam_workers: int = SAM_WORKERS, sam_reparse: bool = False) -> dict:
+            max_steps: int | None = None, max_tracks: int = 80, overlay: bool = True,
+            sam_workers: int = SAM_WORKERS, sam_reparse: bool = False,
+            classify_reparse: bool = False) -> dict:
     """Run every stage for one job. Never raises: failures land in job.json."""
     ruleset = Path(ruleset or REPO / "rulesets" / "kr-fire.json")
     max_steps = max_steps or stage3.DEFAULT_MAX_STEPS
@@ -735,7 +738,8 @@ def run_job(job: Job, *, ruleset: Path | None = None, lang: str = "en",
                         f"({label['confidence']:.2f})", image=image)
 
         counts = stage2.classify(run_dir, work, max_tracks=max_tracks,
-                                 exclude_concepts=EXCLUDE_FROM_CLASSIFY, on_track=on_track)
+                                 exclude_concepts=EXCLUDE_FROM_CLASSIFY, on_track=on_track,
+                                 reparse=classify_reparse)
         job.data["counts"] = counts
         job.stage("classify", "done",
                   f"{counts['labelled']} labelled · {counts['merged']} merged · {counts['errors']} errors")
@@ -808,14 +812,15 @@ def main() -> None:
     ap.add_argument("--window", type=float, default=DEFAULT_WINDOW_S,
                     help="seconds per SAM request (default 10: SAM tracks at most 16 objects "
                          "per request, so long clips are split and stitched)")
-    ap.add_argument("--max-tracks", type=int, default=60)
+    ap.add_argument("--max-tracks", type=int, default=80,
+                    help="tracks to label (windowing multiplies track IDs: ~76 for a 145 s walk)")
     ap.add_argument("--max-steps", type=int, default=stage3.DEFAULT_MAX_STEPS)
     ap.add_argument("--ruleset", type=Path, default=REPO / "rulesets" / "kr-fire.json")
     ap.add_argument("--lang", choices=["en", "ko"], default="en")
     ap.add_argument("--no-overlay", action="store_true")
     ap.add_argument("--reparse", action="store_true",
-                    help="rebuild the SAM stage from the saved <slug>.w<k>.sse.jsonl files "
-                         "in --run (no SAM request, no cost)")
+                    help="rebuild the SAM and labelling stages from the saved "
+                         "<slug>.w<k>.sse.jsonl and muse_raw/ files in --run (no request, no cost)")
     ap.add_argument("--dry-run", action="store_true",
                     help="preprocess + cost estimate only, no API call")
     args = ap.parse_args()
@@ -840,7 +845,7 @@ def main() -> None:
                      concepts=concepts, window_s=args.window)
     data = run_job(job, ruleset=args.ruleset, lang=args.lang, max_steps=args.max_steps,
                    max_tracks=args.max_tracks, overlay=not args.no_overlay,
-                   sam_reparse=args.reparse)
+                   sam_reparse=args.reparse, classify_reparse=args.reparse)
     print(f"-> {job.dir} · {data['status']}"
           + (f" · {data['error']}" if data["error"] else ""))
     if data["status"] != "done":

@@ -51,11 +51,32 @@ frames) and sends one request per (window, concept). A track on the last frame o
 the first frame of window k+1 are the same object when their boxes overlap (IoU > 0.3), so IDs stay global;
 the per-window SSE streams are kept as `<slug>.w<k>.sse.jsonl` and `--reparse` rebuilds the stitched
 timeline without calling the API. Same footage, 135 requests: no window used more than 10 IDs (worst =
-`door`), `exit sign` tracks 219–731 and 1065–1385 (the second one is the 107–139 s stretch that was
-invisible before), and the checklist now reads `exit_sign_present = ok` at 74.7 s.
+`door`), `exit sign` comes back as 12 tracks instead of the 7 the whole-clip request could hold, and where
+that request went silent after frame 776 the windowed run has green signs at 21.9–74.8 s (frames
+563–731) and 106.5–138.7 s (frames 1065–1385). The checklist reads `exit_sign_present = ok` at 74.7 s.
 
 Billing: `usage.video_frames_processed` sums to 12,950 for that run against 13,041 frames expected
 (9 concepts x 1,449) — the difference is one failed request and a **50-frame minimum per request**: the
 last, 49-frame window is billed 50, and on a 21 s clip whose tail window is 10 frames the same floor
 costs 40 x 9 = 360 frames (2,250 billed vs 1,890 expected). Splitting is free for windows of 50 frames
 or more; a sub-5 s tail should be merged into the window before it if cost matters.
+
+## Inspection-agent verdicts drift on the same frame — measured 2026-10-28
+
+The stage-3 agent re-opens frames through `view_track` before filing, but its verdict on one crop is not
+stable between runs. The 45 s fire door in `data/IMG_2559.MOV` (frame 450: the right leaf of a double
+stairwell door standing open, surface closer on top) drew three different answers in five passes of the
+same model on the same pixels:
+
+| pass | `fd_selfclose` | `fd_held_open` | what the note claims |
+|---|---|---|---|
+| whole-clip run (before windowing) | issue | needs_human_check | door open |
+| windowed, first pass | needs_human_check | ok | "seen open" |
+| windowed, second pass | ok | ok | "shown closed" |
+| windowed, third pass | ok | ok | "shown closed" |
+| windowed, fourth pass | issue | needs_human_check | door open |
+
+Two of the five say the open door is closed, so a single pass is not evidence for this item. The stage-2
+label of that track (`fire_door`, rep frame 450) was identical across the passes, so this is model
+variance, not a classification change. Open fix: lower the temperature, or file two independent passes and
+report a disagreement as `needs_human_check` instead of picking one.
