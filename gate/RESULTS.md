@@ -122,3 +122,52 @@ without pass dirs) still reparses to the same statuses and usage.
 Cost: two passes double the agent's model calls (12–13 per run instead of 6). The four runs above cost
 457,897 input + 113,638 output tokens ≈ **$1.06** at $1.25 / $4.25 per million, against $0.13 for one
 single-pass run of the same clip.
+
+## Single-question door state — measured 2026-10-28
+
+The two-pass merge stopped the open door from coming back `ok`, but it also stopped it from coming back
+`issue`: no vote over `ok` / `issue` / `needs_human_check` ever reaches the right answer. The model does see
+the door, though — it just loses the answer while holding sixteen other items at once. Asked **one**
+question about the same boxed full frame (`agent_frames/door_15_f450_ctx.jpg`, 45.0 s), with nothing else in
+the conversation, `muse-spark-1.3` answered `door_state = open` **10 times out of 10** at temperature 0.2,
+with matching evidence ("swung out ~90°, dark opening exposed"). Ten calls cost **$0.10**.
+
+Stage 2 now asks it there instead: every track it labels `fire_door` gets two independent calls of that one
+question on its boxed frame (`pipeline/classify_tracks.py`, `door_state_raw/<slug>_<oid>_<k>.json`). Two
+agreeing answers are the value; anything else is `unclear`. The inspection agent receives it as a measured
+fact (`door_state: open (2/2 independent checks)` in `list_tracks` / `view_track`) and `submit_report` is
+rejected when an item contradicts it: `open` must be `fd_selfclose = issue`, `closed` cannot be, `unclear`
+must be `needs_human_check`; `fd_held_open` stays a wedge-visible-only issue.
+
+Three fresh copies of the 45 s clip, each with two inspection passes:
+
+| copy | measured door state | check 1 | check 2 | merged |
+|---|---|---|---|---|
+| `…-s7a` | `door_15 open (2/2)` | issue | issue | **issue** |
+| `…-s7b` | `door_15 open (2/2)` | issue | issue | **issue** |
+| `…-s7c` | `door_15 open (2/2)` | issue | issue | **issue** |
+
+`fd_selfclose` came out `issue` in 6 of 6 conversations (in stage 6 it was `issue` in 2 of 6, and never
+after merging), and no item disagreed in any of the three runs. `evac_route_obstruct` is now `ok` 6/6 on
+this clip — the ruleset item forbids something, so "walked it, nothing in the way" is `ok`, not
+`possibly_missing` (rule 6 says so now; stage 6's wording-only disagreement is gone). `exit_sign_*`,
+`ext_*`, `hc_*` stayed `ok` as before.
+
+Hospital copy (two doors): `door_0` = **unclear 2/2** (the box is a leaf edge-on at the right frame — nothing
+to decide, and the answer is right), `door_1` = **closed 2/2** (leaf flush in its frame). With no door open
+and one unclear, `fd_selfclose` = `needs_human_check`; `evac_route_obstruct` = `issue`, `exit_sign_present`
+= `ok`. The one remaining disagreement there is `fd_held_open` (`ok` vs `needs_human_check` on a closed
+door) — not a door-state contradiction, both passes agree nothing is holding it.
+
+The report summary is no longer one pass's prose. With two checks it is assembled from the merged checklist
+(plus the measured door states), because the pass-1 summary used to say "fire door appearing closed" on the
+row above its own `needs_human_check`. The passes' own wording is kept in `report.json` as `check_summary`.
+
+Cost: the six door calls (2 on the 45 s clip, 4 on the hospital clip) cost 4,884 input + 11,542 output
+tokens ≈ **$0.055**; the four runs in this section (8 inspection conversations, 49 calls) came to
+$0.97 — **$1.02** together, SAM untouched. `--reparse` rebuilds `door_state` from `door_state_raw/` with no
+calls, and `report.json` comes back identical apart from `generated_at`.
+
+Limits: the answer is about the leaf at the track's largest-box frame only — a door that is open at 45 s and
+shut at 50 s is measured once; damage and a wedge are still the agent's call, and if the largest frame shows
+the leaf edge-on the honest answer is `unclear` (as on `door_0`).

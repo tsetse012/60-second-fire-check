@@ -742,7 +742,9 @@ def run_job(job: Job, *, ruleset: Path | None = None, lang: str = "en",
                                  reparse=classify_reparse)
         job.data["counts"] = counts
         job.stage("classify", "done",
-                  f"{counts['labelled']} labelled · {counts['merged']} merged · {counts['errors']} errors")
+                  f"{counts['labelled']} labelled · {counts['merged']} merged · {counts['errors']} errors"
+                  + (f" · {counts['door_state_tracks']} door state check(s)"
+                     if counts.get("door_state_tracks") else ""))
 
         # 4. inspection agent ------------------------------------------------
         job.stage("inspect", "running", "agent starting")

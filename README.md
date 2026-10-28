@@ -47,17 +47,25 @@ status, timing, cost estimate, log).
    boxed context frame and asks `muse-spark-1.3` what each one is (fire hose cabinet / exit sign / not fire
    equipment / unclear), with a condition, confidence and one-sentence evidence. Four requests are in
    flight at a time; the outputs are still written in track order. Tracks that sit on the
-   same pixels are merged, within one concept or across two.
+   same pixels are merged, within one concept or across two. Every track that comes out `fire_door` then
+   gets the door-state question **on its own**: two independent calls, one question
+   (`open | closed | unclear` + evidence) about the boxed full frame, agreeing answers kept and anything else
+   `unclear`. The single question is 10/10 stable where the 17-item agent loop flipped (`gate/RESULTS.md`);
+   raw responses are kept in `door_state_raw/` and `--reparse` rebuilds the value with no calls.
 4. **Inspection agent** (`pipeline/inspect_agent.py`) — the classified tracks plus a ruleset
    (`rulesets/kr-fire.json`, 17 Korean self-inspection items; `rulesets/nfpa.json`) go to `muse-spark-1.3`
    with four tools: `list_tracks`, `view_track` (re-crop any frame that track was seen in, returned to the
    model as images), `get_rule`, `submit_report`. The agent is told not to trust stage-2 labels and to look
    again before it decides; `submit_report` is rejected if it marks something `ok`/`issue` on a track it
-   never re-viewed, or leaves a ruleset item out. One verdict drifts: the same crop came back "closed" on
-   the same open door twice in five runs (`gate/RESULTS.md`), so **two independent conversations** run side
-   by side on the same inputs and are merged item by item — same answer twice keeps it, different answers
-   become `needs_human_check` carrying both notes. Every step's request/response is kept per pass in
-   `agent_raw/pass1`, `agent_raw/pass2`, so `--reparse` rebuilds the merged report offline.
+   never re-viewed, if it leaves a ruleset item out, or if it contradicts the measured `door_state`
+   (`open` must be `fd_selfclose = issue`, `closed` cannot be, `unclear` must be `needs_human_check`). One
+   verdict drifts: the same crop came back "closed" on the same open door twice in five runs
+   (`gate/RESULTS.md`), so **two independent conversations** run side by side on the same inputs and are
+   merged item by item — same answer twice keeps it, different answers become `needs_human_check` carrying
+   both notes. The summary paragraph is assembled from that merged checklist, so it cannot call a door
+   closed above a row that says `needs_human_check` (the passes' own prose stays in `check_summary`). Every
+   step's request/response is kept per pass in `agent_raw/pass1`, `agent_raw/pass2`, so `--reparse` rebuilds
+   the merged report offline.
 5. Measured against a manual clipboard count in 3 buildings.
 
 ## Inspection agent
@@ -104,6 +112,7 @@ Outputs go to `runs/<timestamp>/` (raw stream per concept, `summary.json`, `summ
 uv run pipeline/classify_tracks.py --run runs/<run> --video data/clip.mp4 --dry-run  # tracks + call count
 uv run pipeline/classify_tracks.py --run runs/<run> --video data/clip.mp4            # crops/, muse_raw/, classified.{json,md}
 uv run pipeline/classify_tracks.py --run runs/<run> --video data/clip.mp4 --reparse  # rebuild, no API calls
+uv run pipeline/classify_tracks.py --run runs/<run> --video data/clip.mp4 --reparse --door-state  # door checks only
 ```
 
 ## License

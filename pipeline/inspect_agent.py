@@ -57,7 +57,7 @@ import httpx
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "pipeline"))
-from classify_tracks import extract_frames, probe, save_context, save_crop  # stage-2 image code
+from classify_tracks import DOOR_STATE_CHECKS, extract_frames, probe, save_context, save_crop  # stage-2 image code
 
 BASE_URL = "https://api.meta.ai/v1"
 MODEL = "muse-spark-1.3"
@@ -69,6 +69,11 @@ DEFAULT_PASSES = 2
 MAX_SUBMIT_REJECTIONS = 2
 DETAIL_FRAMES = 3
 STATUSES = ["ok", "issue", "possibly_missing", "needs_human_check", "not_checkable"]
+# Items that forbid something rather than require it. "I walked the route and saw
+# nothing blocking it" is ok for these; possibly_missing would claim a fitting is
+# absent. The ruleset JSON has no field for this, so the list lives here (the legal
+# wording in rulesets/ is untouched).
+PROHIBITIVE_RID = "evac_route_obstruct"
 
 SUBMIT_SCHEMA = {
     "type": "object",
@@ -187,6 +192,11 @@ def load_tracks(run: Path) -> tuple[dict[str, dict], dict[str, str]]:
             "last_frame": row["last_frame"],
             "rep_frame": row["rep_frame"],
             "evidence": label.get("evidence") or row.get("error") or "",
+            # Measured in stage 2 by DOOR_STATE_CHECKS single-question checks, not
+            # by this agent's 17-item loop (that is what kept flipping on the door).
+            "door_state": row.get("door_state"),
+            "door_state_votes": row.get("door_state_votes") or [],
+            "door_state_evidence": row.get("door_state_evidence") or [],
         }
     return tracks, merged
 
@@ -242,19 +252,28 @@ class Inspector:
             if category and t["category"] != category:
                 continue
             frames = self.idx.get(tid, {})
-            rows.append({
+            row = {
                 **t,
                 "first_second": to_seconds(t["first_frame"], self.fps),
                 "last_second": to_seconds(t["last_frame"], self.fps),
                 "detail_frames": detail_frames(frames) if frames else [t["rep_frame"]],
-            })
+            }
+            if t.get("door_state"):
+                votes = t.get("door_state_votes") or []
+                row["door_state"] = f"{t['door_state']} ({len(votes)}/{DOOR_STATE_CHECKS} independent checks)"
+            else:
+                row.pop("door_state", None)
+            row.pop("door_state_votes", None)
+            row.pop("door_state_evidence", None)
+            rows.append(row)
         payload = {
             "tracks": rows,
             "count": len(rows),
             "categories_present": sorted({t["category"] for t in self.tracks.values()}),
             "merged_duplicates_not_listed": self.merged,
             "note": "cats/conf/evidence are stage-2 guesses, not facts. detail_frames = frames where the box "
-                    "is largest, best candidates for view_track(frame=...).",
+                    "is largest, best candidates for view_track(frame=...). A door_state on a fire_door track "
+                    "is a measured fact (independent single-question checks), not a guess.",
         }
         return json.dumps(payload, ensure_ascii=False)
 
@@ -300,10 +319,16 @@ class Inspector:
         self.viewed.add(tid)
         t = self.tracks[tid]
         x1, y1, x2, y2 = frames[pick]["box"]
+        door = ""
+        if t.get("door_state"):
+            votes = t.get("door_state_votes") or []
+            said = " / ".join(f"\"{e}\"" for e in (t.get("door_state_evidence") or []) if e)
+            door = (f"\ndoor_state: {t['door_state']} ({len(votes)}/{DOOR_STATE_CHECKS} independent checks)"
+                    f"{' — ' + said if said else ''} — measured fact, not a guess; fd_selfclose follows it.")
         text = (f"{prefix}track {tid} · frame {pick} ({to_seconds(pick, self.fps)} s) · {why} · "
                 f"box {int(x2 - x1)}x{int(y2 - y1)} px at {int(x1)},{int(y1)}\n"
                 f"stage-2 said: category={t['category']} condition={t['condition']} "
-                f"confidence={t['confidence']} — \"{t['evidence']}\"\n"
+                f"confidence={t['confidence']} — \"{t['evidence']}\"{door}\n"
                 f"Image 1 = full frame with the box drawn in magenta (look at what is beside the box: a gap "
                 f"or dark opening, a wedge, an obstruction). Image 2 = tight crop (box + 30% margin), which "
                 f"cuts that context away — a single door leaf filling a crop can look closed.")
@@ -317,12 +342,17 @@ class Inspector:
         return json.dumps(rule, ensure_ascii=False)
 
     # -- tool 4 validation
+    def door_states(self) -> dict[str, str]:
+        return {tid: t["door_state"] for tid, t in self.tracks.items() if t.get("door_state")}
+
     def check_submission(self, args: dict) -> list[str]:
         problems = []
         reported = {it.get("rule_id") for it in args.get("items", [])}
         missing = [rid for rid in self.rules if rid not in reported]
         if missing:
             problems.append(f"missing ruleset items (every item must be reported): {', '.join(missing)}")
+        doors = self.door_states()
+        door_line = ", ".join(f"{tid} {state}" for tid, state in sorted(doors.items()))
         for it in args.get("items", []):
             rid = it.get("rule_id")
             if rid not in self.rules:
@@ -338,6 +368,23 @@ class Inspector:
                 elif not (set(ev) & self.viewed):
                     problems.append(f"{rid}: {it['status']} on {ev} but view_track was never called for "
                                     f"{sorted(set(ev) & set(self.tracks)) or ev} — look at it first")
+            if not doors:
+                continue
+            state = it["status"]
+            if rid == "fd_selfclose":
+                if "open" in doors.values() and state != "issue":
+                    problems.append(f"fd_selfclose is {state} but door_state is open ({door_line}) — a fire "
+                                    f"door standing open is not self-closing: file it as issue")
+                elif set(doors.values()) == {"closed"} and state == "issue":
+                    problems.append(f"fd_selfclose is issue but every door_state check says closed "
+                                    f"({door_line}) — do not report a closed door as propped open")
+                elif "open" not in doors.values() and "closed" not in doors.values() \
+                        and state not in {"needs_human_check", "not_checkable"}:
+                    problems.append(f"fd_selfclose is {state} but door_state is unclear ({door_line}) — "
+                                    f"unclear means needs_human_check")
+            elif rid == "fd_held_open" and state == "issue" and set(doors.values()) == {"closed"}:
+                problems.append(f"fd_held_open is issue but door_state is closed ({door_line}) — a closed "
+                                f"door is not held open")
         return problems
 
 
@@ -345,6 +392,10 @@ class Inspector:
 
 def run_instructions(lang: str, rs: dict, stats: dict, max_steps: int) -> str:
     lang_name = "Korean" if lang == "ko" else "English"
+    prohibitive_rule = next((it for it in rs["items"] if it["id"] == PROHIBITIVE_RID), None)
+    prohibitive = f"`{PROHIBITIVE_RID}`" + (
+        f" ({prohibitive_rule['name_en']})" if prohibitive_rule else "")
+    door_checks = DOOR_STATE_CHECKS
     return f"""\
 You are the inspection agent of "60-Second Fire Check". Someone walked a building corridor with a phone
 for {stats['duration']} s ({stats['frames']} frames). Stage 1 tracked objects with SAM 3.1 on generic
@@ -371,21 +422,30 @@ Rules of evidence
 4. Never invent a track id or a frame. Never cite a law you did not read from get_rule.
 5. Budget: {max_steps} model steps for the whole inspection. tool results and your own turns both count, so
    prefer a few decisive views over many: usually 1 view per rule that has a matching track, not per track.
-6. Items whose matches_categories have no track at all: use possibly_missing when the walk should have
-   shown such a thing, needs_human_check/not_checkable when the answer is genuinely outside the video.
-   An item marked not_checkable in the ruleset must never become ok.
+6. Items whose matches_categories have no track at all: use possibly_missing only for an item that requires a
+   fitting to be there (an extinguisher, a sign, a detector, a sprinkler head). {prohibitive} is the opposite
+   kind — it forbids something. For it, walking the route and seeing nothing in the way is ok; possibly_missing
+   would wrongly say a fitting is absent. needs_human_check is right only when the footage cannot tell whether
+   an object sits in the corridor or inside a room. An item marked not_checkable in the ruleset must never
+   become ok.
 7. Escape routes do not get a "people can still squeeze past" test: a wheelchair, cart, pallet or stack
    parked in a corridor or in front of an exit is itself the violation (법 제16조제1항제2호 forbids
    storing things in or placing obstacles around escape facilities). If such an object is clearly in the
    corridor, status=issue; if you cannot tell whether it sits in the corridor or inside a room,
    needs_human_check.
-8. Judge a door from the full frame (image 1), never from the tight crop alone: one leaf filling a crop
-   looks like a closed door. A dark opening or gap beside the leaf, or a closer arm stretched across the
-   top of an opened leaf, means the door is standing open — a fire door standing open is
-   fd_selfclose=issue (add fd_held_open=issue when something holds it there). A fire door you never saw
-   standing open but also never saw latched shut is needs_human_check, not ok.
-9. Write the checklist from the verdicts you reached while the image was in front of you: the note you
-   file must match what you concluded right after view_track. Do not re-decide a door from memory.
+8. Door state is measured for you, not for you to judge again. Every track stage 2 labelled fire_door carries
+   door_state, the answer of {door_checks} independent single-question checks on that track's largest frame
+   (list_tracks / view_track show it as e.g. "open ({door_checks}/{door_checks} independent checks)"). Treat it
+   as a fact about the footage:
+   - open    -> fd_selfclose = issue (a fire door standing open is not self-closing); cite that track.
+   - closed  -> ok is allowed when the closer arm looks intact; nothing else about the door is proven.
+   - unclear -> fd_selfclose = needs_human_check.
+   fd_held_open is issue only when you can see what holds the leaf — a wedge, rope, chair, hook or carton. A
+   door standing open with nothing visible holding it stays needs_human_check. submit_report is rejected when
+   fd_selfclose / fd_held_open contradict door_state.
+9. Still look at the door frame yourself (view_track) before you file: the block above settles open vs closed,
+   damage and the wedge do not follow from it. Write the note from what you concluded while the image was in
+   front of you; do not re-decide a door from memory.
 
 When you are done, call submit_report with one item per ruleset item ({len(rs['items'])} items), a summary
 of 2-4 sentences that states what this footage can and cannot establish, and an email_draft to the building
@@ -712,6 +772,66 @@ HEAD = {
 }
 
 
+def assemble_summary(items: list[dict], lang: str, checks: int, single_pass: bool,
+                     tracks: dict) -> str:
+    """Summary paragraph derived from the merged checklist, not from one pass's prose.
+
+    With two conversations per item the model's summary is whichever pass filed
+    first: it read "the fire door appears closed" above a checklist that said
+    needs_human_check. This paragraph is built from the merged statuses (and the
+    measured door states), so it cannot contradict the table under it. The model's
+    wording is kept in report.json as `check_summary`.
+    """
+    counts: dict[str, int] = {}
+    for it in items:
+        counts[it["status"]] = counts.get(it["status"], 0) + 1
+    issues = [it for it in items if it["status"] == "issue"]
+    disagree = [it for it in items if it["agreement"] is False]
+    missing = [it for it in items if it["status"] == "possibly_missing"]
+    doors = {tid: t["door_state"] for tid, t in tracks.items() if t.get("door_state")}
+
+    def name(it: dict) -> str:
+        return it["name_ko"] if lang == "ko" else it["name_en"]
+
+    def where(it: dict) -> str:
+        return f" at {it['seconds'][0]} s" if it.get("seconds") else ""
+
+    if lang == "ko":
+        parts = [f"같은 영상에 독립 점검 {checks}회를 돌려 항목별로 합친 결과다."]
+        if single_pass:
+            parts[0] = "독립 점검 2회 중 1회만 보고서를 제출해, 항목마다 판정이 하나뿐이다."
+        parts.append("합친 결과: " + " · ".join(
+            f"{STATUS_LABEL['ko'][k]} {counts[k]}" for k in STATUSES if counts.get(k)) + ".")
+        parts += [f"충족되지 않은 항목 — {name(it)} (`{it['rule_id']}`){where(it)}." for it in issues[:3]]
+        if disagree:
+            parts.append("두 점검이 엇갈린 항목(" + ", ".join(f"`{it['rule_id']}`" for it in disagree)
+                         + ")은 현장 확인이 필요하다.")
+        if doors:
+            parts.append("문 상태 단답 점검: " + ", ".join(
+                f"{tid} {state}" for tid, state in sorted(doors.items())) + ".")
+        if missing:
+            parts.append("영상에서 보이지 않은 항목(" + ", ".join(f"`{it['rule_id']}`" for it in missing)
+                         + ")은 이 구간에서 안 보였다는 뜻일 뿐, 없다는 뜻이 아니다.")
+        return " ".join(parts)
+
+    parts = [f"{checks} independent checks ran on the same footage and are merged item by item."]
+    if single_pass:
+        parts[0] = "Only one of the two checks filed a report, so every item carries one verdict."
+    parts.append("Merged result: " + " · ".join(
+        f"{counts[k]} {k.replace('_', ' ')}" for k in STATUSES if counts.get(k)) + ".")
+    parts += [f"Requirement not met — {name(it)} (`{it['rule_id']}`){where(it)}." for it in issues[:3]]
+    if disagree:
+        parts.append("Two checks disagreed on " + ", ".join(f"`{it['rule_id']}`" for it in disagree)
+                     + " — a person has to settle those on site.")
+    if doors:
+        parts.append("Door state, measured by single-question checks: " + ", ".join(
+            f"{tid} {state}" for tid, state in sorted(doors.items())) + ".")
+    if missing:
+        parts.append("Not seen in this walk: " + ", ".join(f"`{it['rule_id']}`" for it in missing)
+                     + " — that is not proof they are absent.")
+    return " ".join(parts)
+
+
 def build_report(run: Path, video: Path, rs: dict, rules: dict[str, dict], tracks: dict, idx: dict,
                  fps: float, lang: str, outcome: dict, stats: dict) -> dict:
     sub = outcome["submission"] or {}
@@ -747,6 +867,10 @@ def build_report(run: Path, video: Path, rs: dict, rules: dict[str, dict], track
     for it in items:
         counts[it["status"]] = counts.get(it["status"], 0) + 1
     disagree = [it["rule_id"] for it in items if it["agreement"] is False]
+    checks = outcome.get("checks", 1)
+    check_summary = sub.get("summary") or ""
+    summary = (assemble_summary(items, lang, checks, bool(outcome.get("single_pass")), tracks)
+               if checks > 1 else check_summary)
     return {
         "run": str(run), "video": str(video), "ruleset": rs["id"], "ruleset_title": rs.get("title_en"),
         "model": MODEL, "lang": lang, "temperature": TEMPERATURE,
@@ -755,11 +879,12 @@ def build_report(run: Path, video: Path, rs: dict, rules: dict[str, dict], track
         "stop_reason": outcome["stop_reason"],
         "footage": stats,
         "counts": counts,
-        "checks": outcome.get("checks", 1),
+        "checks": checks,
         "single_pass": outcome.get("single_pass", True),
         "disagreements": disagree,
         "passes": outcome.get("passes", []),
-        "summary": sub.get("summary") or "",
+        "summary": summary,
+        "check_summary": check_summary,
         "email_draft": sub.get("email_draft") or {},
         "items": items,
         "autofilled_rule_ids": autofilled,
@@ -791,11 +916,9 @@ def write_report(rep: dict, run: Path, lang: str) -> None:
         lines += [f"> **INCOMPLETE** — the agent stopped before submit_report ({rep['stop_reason']}). "
                   f"Every item below is unfilled.", ""]
     if rep["summary"]:
-        from_check = ""
-        if rep.get("checks", 1) > 1:
-            from_check = (f" — check 1 of {rep['checks']}" if lang == "en"
-                          else f" — 점검 1/{rep['checks']}")
-        lines += [f"## {h['summary']}{from_check}", "", rep["summary"], ""]
+        # With several checks the paragraph is assembled from the merged items, so it
+        # cannot describe a door as closed above a row that says needs_human_check.
+        lines += [f"## {h['summary']}", "", rep["summary"], ""]
     lines += [f"| # | {h['item']} | {h['result']} | {h['evidence']} | {h['note']} | {h['source']} |",
               "|---|---|---|---|---|---|"]
     for n, it in enumerate(rep["items"], 1):

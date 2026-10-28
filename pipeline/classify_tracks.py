@@ -67,6 +67,24 @@ SCHEMA = {
     "additionalProperties": False,
 }
 
+# One question on its own, after the category is known: the 17-item inspection
+# loop asked one crop to be a door OR a sign OR a cabinet and flipped "closed" on
+# an open leaf, but the same frame asked this single question gave open 10/10
+# (gate/RESULTS.md). Two independent calls; they must agree, else unclear.
+DOOR_STATE_DIR = "door_state_raw"
+DOOR_STATE_CHECKS = 2
+DOOR_QUESTION = ("Look at the door inside the magenta box. Is that door leaf standing open or shut "
+                 "in its frame? Answer from what you see.")
+DOOR_STATE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "door_state": {"type": "string", "enum": ["open", "closed", "unclear"]},
+        "evidence": {"type": "string"},
+    },
+    "required": ["door_state", "evidence"],
+    "additionalProperties": False,
+}
+
 INSTRUCTIONS = """\
 You label objects that a video segmentation model (SAM 3.1) tracked in a building
 corridor video. SAM labelled this object as "{concept}". Do not trust that name:
@@ -247,11 +265,12 @@ def save_context(im: Image.Image, box: list[float], wh: list[int], out: Path, la
 
 # ---------------------------------------------------------------- muse
 
+def data_uri(p: Path) -> str:
+    return "data:image/jpeg;base64," + base64.b64encode(p.read_bytes()).decode()
+
+
 def ask(client: httpx.Client, concept: str, crop: Path, context: Path) -> tuple[dict, dict]:
     """One classification request. Returns (raw response JSON, usage)."""
-    def data_uri(p: Path) -> str:
-        return "data:image/jpeg;base64," + base64.b64encode(p.read_bytes()).decode()
-
     body = {
         "model": MODEL,
         "input": [{"type": "message", "role": "user", "content": [
@@ -261,6 +280,25 @@ def ask(client: httpx.Client, concept: str, crop: Path, context: Path) -> tuple[
         ]}],
         "text": {"format": {"type": "json_schema", "name": "track_label",
                             "schema": SCHEMA, "strict": True}},
+    }
+    r = client.post("/responses", json=body, timeout=300)
+    if r.status_code != 200:
+        raise RuntimeError(f"HTTP {r.status_code}: {r.text[:400]}")
+    raw = r.json()
+    return raw, raw.get("usage") or {}
+
+
+def ask_door_state(client: httpx.Client, context: Path) -> tuple[dict, dict]:
+    """The single-question door check on the boxed full frame (no crop)."""
+    body = {
+        "model": MODEL,
+        "temperature": 0.2,
+        "input": [{"role": "user", "content": [
+            {"type": "input_text", "text": DOOR_QUESTION},
+            {"type": "input_image", "image_url": data_uri(context)},
+        ]}],
+        "text": {"format": {"type": "json_schema", "name": "door_state",
+                            "schema": DOOR_STATE_SCHEMA, "strict": True}},
     }
     r = client.post("/responses", json=body, timeout=300)
     if r.status_code != 200:
@@ -287,17 +325,75 @@ def parse_label(raw: dict) -> dict:
     return label
 
 
+def parse_door_state(raw: dict) -> dict:
+    stamp = json.loads(output_text(raw))
+    if stamp.get("door_state") not in {"open", "closed", "unclear"}:
+        raise RuntimeError(f"door_state out of enum: {stamp.get('door_state')!r}")
+    return stamp
+
+
+def door_state_for(key: tuple[str, int], context: Path, raw_dir: Path,
+                   client: httpx.Client | None) -> dict:
+    """DOOR_STATE_CHECKS independent single-question checks on one fire door.
+
+    Every response is written to `door_state_raw/<slug>_<oid>_<k>.json` before it
+    is parsed, so a re-run rebuilds the value with no calls (`client=None`). Two
+    matching answers keep the answer; anything else (disagreement, a failed call)
+    is `unclear`, which the inspection agent turns into needs_human_check.
+    """
+    slug, oid = key
+    votes: list[str] = []
+    evidence: list[str] = []
+    errors: list[str] = []
+    usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+    calls = 0
+    for k in range(1, DOOR_STATE_CHECKS + 1):
+        path = raw_dir / f"{slug}_{oid}_{k}.json"
+        raw = None
+        if path.exists():
+            raw = json.loads(path.read_text())
+        elif client is not None:
+            try:
+                raw, call_usage = ask_door_state(client, context)
+            except Exception as exc:
+                errors.append(f"{type(exc).__name__}: {exc}")
+            else:
+                path.write_text(json.dumps(raw, indent=2, ensure_ascii=False))
+                calls += 1
+                for kk in usage:
+                    usage[kk] += call_usage.get(kk) or 0
+        else:
+            errors.append(f"no saved {path.name}")
+        if raw is None:
+            continue
+        try:
+            stamp = parse_door_state(raw)
+        except Exception as exc:
+            errors.append(f"{path.name}: {type(exc).__name__}: {exc}")
+            continue
+        votes.append(stamp["door_state"])
+        evidence.append(stamp.get("evidence") or "")
+    state = votes[0] if len(votes) == DOOR_STATE_CHECKS and len(set(votes)) == 1 else (
+        "unclear" if votes else None)
+    return {"door_state": state, "votes": votes, "evidence": evidence,
+            "errors": errors, "calls": calls, "usage": usage}
+
+
 # ---------------------------------------------------------------- report
 
 def write_outputs(run: Path, video: Path, tracks: dict, rep_of: dict, labels: dict,
-                  filled: dict, calls: int, usage: dict) -> dict:
+                  filled: dict, calls: int, usage: dict, door_states: dict | None = None,
+                  door_calls: int = 0, door_usage: dict | None = None) -> dict:
     """Write classified.json/md. Returns the counts block of classified.json."""
+    door_states = door_states or {}
+    door_usage = door_usage or {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
     keys = sorted(tracks, key=lambda k: (tracks[k]["first"], k[0], k[1]))
     rows = []
     for k in keys:
         tr, slug, oid = tracks[k], k[0], k[1]
         merged_into = rep_of[k]
         label = labels.get(k)
+        door = door_states.get(k) or {}
         rows.append({
             "track": f"{slug}_{oid}",
             "concept": slug.replace("_", " "),
@@ -309,6 +405,10 @@ def write_outputs(run: Path, video: Path, tracks: dict, rep_of: dict, labels: di
             "crop": filled.get(k, {}).get("crop"),
             "context": filled.get(k, {}).get("context"),
             "label": label,
+            "door_state": door.get("door_state"),
+            "door_state_votes": door.get("votes"),
+            "door_state_evidence": door.get("evidence"),
+            "door_state_errors": door.get("errors"),
             "error": filled.get(k, {}).get("error"),
         })
 
@@ -319,31 +419,39 @@ def write_outputs(run: Path, video: Path, tracks: dict, rep_of: dict, labels: di
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "calls_this_pass": calls,
         "usage_totals": usage,
+        "door_state_calls_this_pass": door_calls,
+        "door_state_usage_totals": door_usage,
         "counts": {"tracks": len(tracks),
                    "labelled": sum(1 for r in rows if r["label"]),
                    "merged": sum(1 for r in rows if r["merged_into"]),
-                   "errors": sum(1 for r in rows if r["error"])},
+                   "errors": sum(1 for r in rows if r["error"]),
+                   "door_state_tracks": len(door_states)},
         "tracks": rows,
     }
     (run / "classified.json").write_text(json.dumps(out, indent=2, ensure_ascii=False))
 
     lines = [f"# Track classification — {video.name}", "",
              f"{len(tracks)} tracks · {out['counts']['labelled']} labelled by `{MODEL}` · "
-             f"{out['counts']['merged']} merged duplicates · {out['counts']['errors']} errors", "",
-             "| track | concept | frames | category | condition | conf | evidence |",
-             "|---|---|---|---|---|---|---|"]
+             f"{out['counts']['merged']} merged duplicates · {out['counts']['errors']} errors"
+             + (f" · {len(door_states)} fire-door state check(s)" if door_states else ""), "",
+             "| track | concept | frames | category | condition | conf | door state | evidence |",
+             "|---|---|---|---|---|---|---|---|"]
     for r in rows:
         span = f"{r['first_frame']}–{r['last_frame']}"
+        door = ""
+        if r["door_state"]:
+            votes = r["door_state_votes"] or []
+            door = f"{r['door_state']} ({len(votes)}/{DOOR_STATE_CHECKS})"
         if r["merged_into"]:
-            lines.append(f"| {r['track']} | {r['concept']} | {span} | _merged_ | {r['merged_into']} | | |")
+            lines.append(f"| {r['track']} | {r['concept']} | {span} | _merged_ | {r['merged_into']} | | | |")
             continue
         if r["error"]:
             lines.append(f"| {r['track']} | {r['concept']} | {span} | **error** | "
-                         f"{r['error'][:120].replace('|', '/')} | | |")
+                         f"{r['error'][:120].replace('|', '/')} | | {door} | |")
             continue
         lb = r["label"] or {}
         lines.append(f"| {r['track']} | {r['concept']} | {span} | {lb.get('category', '')} | "
-                     f"{lb.get('condition', '')} | {lb.get('confidence', '')} | "
+                     f"{lb.get('condition', '')} | {lb.get('confidence', '')} | {door} | "
                      f"{lb.get('evidence', '').replace('|', '/')} |")
     (run / "classified.md").write_text("\n".join(lines) + "\n")
     print("\n".join(lines))
@@ -352,7 +460,7 @@ def write_outputs(run: Path, video: Path, tracks: dict, rep_of: dict, labels: di
 
 def classify(run: Path, video: Path, max_tracks: int = 60, *, reparse: bool = False,
              exclude_concepts: set[str] | frozenset[str] = frozenset(),
-             dry_run: bool = False, on_track=None) -> dict:
+             dry_run: bool = False, on_track=None, door_state_calls: bool = False) -> dict:
     """Stage 2 over an existing run dir (the `<slug>.txt` SAM files must be there).
 
     `exclude_concepts` drops whole SAM concepts before anything is labelled — the
@@ -360,6 +468,12 @@ def classify(run: Path, video: Path, max_tracks: int = 60, *, reparse: bool = Fa
     `on_track(key, label, error)` fires once per selected track, in the same order
     as the printed lines, so a caller can stream progress. Returns the counts block
     of classified.json.
+
+    After the labels are known, every `fire_door` track gets DOOR_STATE_CHECKS
+    single-question checks on its boxed full frame (`door_state` in
+    classified.json). Saved `door_state_raw/*.json` is always reused, so copying a
+    run re-measures nothing; a fresh classification passes `client` and calls the
+    API, `--reparse` alone never does.
     """
     tracks = load_tracks(run)
     if not tracks:
@@ -471,8 +585,32 @@ def classify(run: Path, video: Path, max_tracks: int = 60, *, reparse: bool = Fa
         filled[k] = {"crop": None, "context": None,
                      "error": f"skipped: over --max-tracks={max_tracks}"}
 
+    # Door state, one question at a time, once the category is a fact. Saved raw
+    # responses win over calling again (a copied run reuses what was measured).
+    door_targets = [k for k in selected if (labels.get(k) or {}).get("category") == "fire_door"]
+    door_states: dict = {}
+    door_calls = 0
+    door_usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+    if door_targets:
+        door_dir = run / DOOR_STATE_DIR
+        door_dir.mkdir(exist_ok=True)
+        allow_calls = door_state_calls or not reparse
+        with httpx.Client(base_url=BASE_URL,
+                          headers={"Authorization": f"Bearer {api_key()}"} if allow_calls else {}) as client:
+            for k in door_targets:
+                context = Path(filled[k]["context"])
+                got = door_state_for(k, context, door_dir, client if allow_calls else None)
+                door_states[k] = got
+                door_calls += got["calls"]
+                for kk in door_usage:
+                    door_usage[kk] += got["usage"].get(kk) or 0
+                print(f"  door state {k[0]}#{k[1]} -> {got['door_state']} "
+                      f"({len(got['votes'])}/{DOOR_STATE_CHECKS} agree)"
+                      + (f" · {got['errors'][0][:120]}" if got["errors"] else ""))
+
     print(f"probe: {meta['width']}x{meta['height']} {meta['frames']} frames")
-    return write_outputs(run, video, tracks, rep_of, labels, filled, calls, usage_total)
+    return write_outputs(run, video, tracks, rep_of, labels, filled, calls, usage_total,
+                         door_states, door_calls, door_usage)
 
 
 def main() -> None:
@@ -483,11 +621,19 @@ def main() -> None:
     ap.add_argument("--max-tracks", type=int, default=60)
     ap.add_argument("--dry-run", action="store_true", help="list tracks and call count, no API")
     ap.add_argument("--reparse", action="store_true", help="rebuild from <run>/muse_raw, no API")
+    ap.add_argument("--exclude-concepts", default="",
+                    help="comma-separated SAM concepts to drop before labelling (the orchestrator drops "
+                         "`person`; pass it here too when you re-label by hand)")
+    ap.add_argument("--door-state", action="store_true",
+                    help="ask the single-question door checks for fire_door tracks (automatic on a "
+                         "fresh classification; with --reparse it only calls for missing door_state_raw)")
     args = ap.parse_args()
 
     try:
-        classify(args.run, args.video, args.max_tracks,
-                 reparse=args.reparse, dry_run=args.dry_run)
+        excluded = frozenset(s.strip() for s in args.exclude_concepts.split(",") if s.strip())
+        classify(args.run, args.video, args.max_tracks, reparse=args.reparse,
+                 exclude_concepts=excluded, dry_run=args.dry_run,
+                 door_state_calls=args.door_state)
     except FileNotFoundError as exc:
         sys.exit(str(exc))
 
