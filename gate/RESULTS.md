@@ -153,8 +153,10 @@ this clip — the ruleset item forbids something, so "walked it, nothing in the 
 `possibly_missing` (rule 6 says so now; stage 6's wording-only disagreement is gone). `exit_sign_*`,
 `ext_*`, `hc_*` stayed `ok` as before.
 
-Hospital copy (two doors): `door_0` = **unclear 2/2** (the box is a leaf edge-on at the right frame — nothing
-to decide, and the answer is right), `door_1` = **closed 2/2** (leaf flush in its frame). With no door open
+Hospital copy (two doors): `door_0` = **unclear** (the two calls split — one read the leaf swung out along
+the hallway, the other read it flush in the wall plane; the box is a leaf seen at a grazing angle at the
+frame edge, where either reading is defensible, so `unclear` is the right output), `door_1` = **closed 2/2**
+(leaf flush in its frame, vision panel and closer visible). With no door open
 and one unclear, `fd_selfclose` = `needs_human_check`; `evac_route_obstruct` = `issue`, `exit_sign_present`
 = `ok`. The one remaining disagreement there is `fd_held_open` (`ok` vs `needs_human_check` on a closed
 door) — not a door-state contradiction, both passes agree nothing is holding it.
