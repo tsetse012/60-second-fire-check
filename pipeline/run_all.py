@@ -187,11 +187,6 @@ def create_job(run_dir: Path, sample: str, source: Path, *, fps: float = DEFAULT
 
 # ---------------------------------------------------------------- preprocess
 
-def even(n: float) -> int:
-    v = round(n)
-    return v - (v % 2)
-
-
 def preprocess(src: Path, dst: Path, fps: float) -> dict:
     """Re-encode to H.264 at 1920 px long side and `fps`; returns the new probe.
 
@@ -208,12 +203,14 @@ def preprocess(src: Path, dst: Path, fps: float) -> dict:
                          f"{MAX_SECONDS / 60:.0f} minutes; trim it first")
     if meta["codec"] not in {"h264", "hevc", "mpeg4"}:
         raise ValueError(f"codec {meta['codec']} not accepted (H.264/H.265/MPEG-4 only)")
-    factor = min(1.0, TARGET_LONG_SIDE / max(meta["width"], meta["height"]))
-    w, h = even(meta["width"] * factor), even(meta["height"] * factor)
+    # Size the long side after ffmpeg applies the rotation flag (phone videos are
+    # stored landscape with a 90-degree flag); probe width/height are pre-rotation.
+    long_side = min(TARGET_LONG_SIDE, max(meta["width"], meta["height"]))
+    scale = (f"scale='if(gte(iw,ih),{long_side},-2)':'if(gte(iw,ih),-2,{long_side})'")
     dst.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(
         ["ffmpeg", "-v", "error", "-y", "-i", str(src),
-         "-vf", f"fps={fps:g},scale={w}:{h}",
+         "-vf", f"fps={fps:g},{scale}",
          "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "23", "-preset", "veryfast",
          "-movflags", "+faststart", "-an", str(dst)],
         check=True, capture_output=True, text=True,
