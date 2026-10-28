@@ -288,7 +288,8 @@ def parse_label(raw: dict) -> dict:
 # ---------------------------------------------------------------- report
 
 def write_outputs(run: Path, video: Path, tracks: dict, rep_of: dict, labels: dict,
-                  filled: dict, calls: int, usage: dict) -> None:
+                  filled: dict, calls: int, usage: dict) -> dict:
+    """Write classified.json/md. Returns the counts block of classified.json."""
     keys = sorted(tracks, key=lambda k: (tracks[k]["first"], k[0], k[1]))
     rows = []
     for k in keys:
@@ -344,49 +345,55 @@ def write_outputs(run: Path, video: Path, tracks: dict, rep_of: dict, labels: di
                      f"{lb.get('evidence', '').replace('|', '/')} |")
     (run / "classified.md").write_text("\n".join(lines) + "\n")
     print("\n".join(lines))
+    return out["counts"]
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--run", type=Path, required=True, help="gate run dir with <slug>.txt files")
-    ap.add_argument("--video", type=Path, required=True)
-    ap.add_argument("--max-tracks", type=int, default=60)
-    ap.add_argument("--dry-run", action="store_true", help="list tracks and call count, no API")
-    ap.add_argument("--reparse", action="store_true", help="rebuild from <run>/muse_raw, no API")
-    args = ap.parse_args()
+def classify(run: Path, video: Path, max_tracks: int = 60, *, reparse: bool = False,
+             exclude_concepts: set[str] | frozenset[str] = frozenset(),
+             dry_run: bool = False, on_track=None) -> dict:
+    """Stage 2 over an existing run dir (the `<slug>.txt` SAM files must be there).
 
-    tracks = load_tracks(args.run)
+    `exclude_concepts` drops whole SAM concepts before anything is labelled — the
+    orchestrator removes `person` so faces never reach the labelling model.
+    `on_track(key, label, error)` fires once per selected track, in the same order
+    as the printed lines, so a caller can stream progress. Returns the counts block
+    of classified.json.
+    """
+    tracks = load_tracks(run)
     if not tracks:
-        sys.exit(f"no <slug>.txt tracks in {args.run}")
+        raise FileNotFoundError(f"no <slug>.txt tracks in {run}")
+    if exclude_concepts:
+        tracks = {k: v for k, v in tracks.items() if k[0] not in exclude_concepts}
+        if not tracks:
+            raise FileNotFoundError(f"no tracks left after excluding {sorted(exclude_concepts)}")
     rep_of = merge_duplicates(tracks)
     reps = sorted([k for k in tracks if rep_of[k] is None],
                   key=lambda k: (tracks[k]["first"], k[0], k[1]))
-    selected, skipped = reps[:args.max_tracks], reps[args.max_tracks:]
+    selected, skipped = reps[:max_tracks], reps[max_tracks:]
 
-    print(f"{args.run.name}: {len(tracks)} tracks in {len({k[0] for k in tracks})} concepts · "
+    print(f"{run.name}: {len(tracks)} tracks in {len({k[0] for k in tracks})} concepts · "
           f"{len(tracks) - len(reps)} merged · {len(selected)} to classify"
-          + (f" · {len(skipped)} over --max-tracks={args.max_tracks}" if skipped else ""))
-    if args.dry_run:
+          + (f" · {len(skipped)} over --max-tracks={max_tracks}" if skipped else ""))
+    if dry_run:
         for k in selected:
             t = tracks[k]
             print(f"  {k[0]}#{k[1]}  frames {t['first']}–{t['last']}  rep {t['rep_frame']}")
         print(f"would call the API {len(selected)} times")
-        return
+        return {"tracks": len(tracks), "selected": len(selected), "would_call": len(selected)}
 
-    meta = probe(args.video)
-    raw_dir = args.run / "muse_raw"
+    meta = probe(video)
+    raw_dir = run / "muse_raw"
     raw_dir.mkdir(exist_ok=True)
     labels: dict = {}
     filled: dict = {}
     usage_total = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
     calls = 0
 
-    if not args.reparse:
-        crops = args.run / "crops"
+    if not reparse:
+        crops = run / "crops"
         crops.mkdir(exist_ok=True)
         with tempfile.TemporaryDirectory() as tmp:
-            frames = extract_frames(args.video, sorted({tracks[k]["rep_frame"] for k in selected}),
+            frames = extract_frames(video, sorted({tracks[k]["rep_frame"] for k in selected}),
                                     Path(tmp))
             headers = {"Authorization": f"Bearer {api_key()}"}
             with httpx.Client(base_url=BASE_URL, headers=headers) as client:
@@ -411,15 +418,19 @@ def main() -> None:
                     except Exception as exc:  # keep going; the row records the failure
                         filled[k]["error"] = f"{type(exc).__name__}: {exc}"
                         print(f"  {slug}#{oid} -> ERROR {filled[k]['error'][:160]}")
+                    if on_track:
+                        on_track(k, labels.get(k), filled[k].get("error"))
     else:
         for k in selected:
             slug, oid = k
-            filled[k] = {"crop": str(args.run / "crops" / f"{slug}_{oid}.jpg"),
-                         "context": str(args.run / "crops" / f"{slug}_{oid}_ctx.jpg"),
+            filled[k] = {"crop": str(run / "crops" / f"{slug}_{oid}.jpg"),
+                         "context": str(run / "crops" / f"{slug}_{oid}_ctx.jpg"),
                          "error": None}
             raw_path = raw_dir / f"{slug}_{oid}.json"
             if not raw_path.exists():
                 filled[k]["error"] = "missing muse_raw file"
+                if on_track:
+                    on_track(k, None, filled[k]["error"])
                 continue
             try:
                 raw = json.loads(raw_path.read_text())
@@ -428,13 +439,32 @@ def main() -> None:
                     usage_total[kk] += (raw.get("usage") or {}).get(kk) or 0
             except Exception as exc:
                 filled[k]["error"] = f"{type(exc).__name__}: {exc}"
+            if on_track:
+                on_track(k, labels.get(k), filled[k].get("error"))
 
     for k in skipped:
         filled[k] = {"crop": None, "context": None,
-                     "error": f"skipped: over --max-tracks={args.max_tracks}"}
+                     "error": f"skipped: over --max-tracks={max_tracks}"}
 
     print(f"probe: {meta['width']}x{meta['height']} {meta['frames']} frames")
-    write_outputs(args.run, args.video, tracks, rep_of, labels, filled, calls, usage_total)
+    return write_outputs(run, video, tracks, rep_of, labels, filled, calls, usage_total)
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--run", type=Path, required=True, help="gate run dir with <slug>.txt files")
+    ap.add_argument("--video", type=Path, required=True)
+    ap.add_argument("--max-tracks", type=int, default=60)
+    ap.add_argument("--dry-run", action="store_true", help="list tracks and call count, no API")
+    ap.add_argument("--reparse", action="store_true", help="rebuild from <run>/muse_raw, no API")
+    args = ap.parse_args()
+
+    try:
+        classify(args.run, args.video, args.max_tracks,
+                 reparse=args.reparse, dry_run=args.dry_run)
+    except FileNotFoundError as exc:
+        sys.exit(str(exc))
 
 
 if __name__ == "__main__":

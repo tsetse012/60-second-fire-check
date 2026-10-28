@@ -4,8 +4,36 @@ Walk a building corridor with your phone for a minute. Get a fire-safety self-in
 
 Built for the Meta Global AI Developer Hackathon 2026 (Indie Dev track).
 
-**Status: day 1 — stage 3.** SAM tracks generic objects, Muse Spark labels each track, and an inspection
-agent then re-opens the footage through tools before it files the checklist.
+**Status: day 1 — stage 4.** SAM tracks generic objects, Muse Spark labels each track, an inspection
+agent re-opens the footage through tools before it files the checklist, and a local web app
+(`app/`) runs the whole thing from a browser: upload → live processing → report.
+
+## Run the demo
+
+```bash
+set -a; . ~/.secrets/credentials.env; set +a     # META_MODEL_API_KEY
+uv run app/server.py                              # http://127.0.0.1:8000
+```
+
+Drop a 1–3 minute corridor video on the page, or pick a clip from `data/` under **Try a sample**.
+The server runs `pipeline/run_all.py` in a background thread and the page polls the run's `job.json`,
+so stage progress and every agent tool call stream in while they happen. A finished run of a sample
+can be re-opened instantly (no model calls) while recording. The Meta API key is read from the
+server's environment and never reaches the browser.
+
+`pipeline/run_all.py` on its own:
+
+```bash
+uv run pipeline/run_all.py data/hospital-corridor-static.mp4 --dry-run   # preprocess + cost estimate
+uv run pipeline/run_all.py data/clip.mp4 --fps 10 --max-cost 3            # full run
+```
+
+Preprocessing (H.264, long side 1280, 10 fps, up to 3 minutes) is the one timeline every later stage
+indexes: SAM frame numbers, the crops the agent re-cuts and `overlay.mp4` all line up, so a report
+timestamp seeks to the same second in the overlay. Artefacts land in `runs/<id>/` — the stage 1–3
+outputs plus `overlay.mp4` (boxes coloured by label: green fire equipment, red issue, amber needs a
+person, grey not fire equipment; people are blurred and never labelled) and `job.json` (per-stage
+status, timing, cost estimate, log).
 
 ## Pipeline
 

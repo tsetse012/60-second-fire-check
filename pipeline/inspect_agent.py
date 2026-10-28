@@ -461,7 +461,7 @@ def output_text(raw: dict) -> str:
 
 
 def run_loop(run: Path, video: Path, rs: dict, rules: dict[str, dict], tracks: dict, merged: dict,
-             idx: dict, lang: str, max_steps: int, stats: dict) -> dict:
+             idx: dict, lang: str, max_steps: int, stats: dict, on_step=None) -> dict:
     raw_dir = run / "agent_raw"
     raw_dir.mkdir(exist_ok=True)
     for old in raw_dir.glob("step_*.json"):
@@ -559,6 +559,8 @@ def run_loop(run: Path, video: Path, rs: dict, rules: dict[str, dict], tracks: d
             trace += step_trace
             record["executed"] = step_trace  # so --reparse can rebuild the trace without tools
             step_path.write_text(json.dumps(record, indent=2, ensure_ascii=False))
+            if on_step:
+                on_step(step, step_trace)
             if submission is not None:
                 break
             inputs = outputs
@@ -697,7 +699,7 @@ def write_report(rep: dict, run: Path, lang: str) -> None:
 
 # ---------------------------------------------------------------- reparse
 
-def reparse(run: Path, rs: dict, rules: dict[str, dict], tracks: dict, idx: dict, fps: float,
+def reparse_outcome(run: Path, rs: dict, rules: dict[str, dict], tracks: dict, idx: dict, fps: float,
             lang: str, stats: dict) -> dict:
     steps = sorted((run / "agent_raw").glob("step_*.json"))
     if not steps:
@@ -725,6 +727,41 @@ def reparse(run: Path, rs: dict, rules: dict[str, dict], tracks: dict, idx: dict
                                      if e["tool"] == "view_track" and e.get("args")} - {""})}
 
 
+def inspect(run: Path, video: Path, ruleset: Path = REPO / "rulesets" / "kr-fire.json",
+            lang: str = "en", max_steps: int = DEFAULT_MAX_STEPS, reparse: bool = False,
+            on_step=None) -> dict:
+    """Run (or reparse) stage 3 for one run dir and write report.json/md + email.md.
+
+    `on_step(step, executed)` fires after each model step with that step's tool
+    trace, so an orchestrator can stream tool calls to a UI. Returns the report
+    dict (`partial` is True when the agent never got submit_report accepted).
+    """
+    if not (run / "classified.json").exists():
+        raise FileNotFoundError(f"{run}/classified.json missing — run classify_tracks first")
+    rs, rules = load_ruleset(ruleset)
+    tracks, merged = load_tracks(run)
+    idx = frame_index(run)
+    meta = probe(video)
+    fps = fps_of(video)
+    stats = {"video": video.name, "width": meta["width"], "height": meta["height"],
+             "frames": meta["frames"], "duration": round(meta["frames"] / fps, 1),
+             "tracks": len(tracks), "fps": round(fps, 3)}
+    print(f"{run.name}: {len(tracks)} tracks · ruleset {rs['id']} ({len(rs['items'])} items) · "
+          f"{stats['duration']} s · lang {lang}")
+
+    if reparse:
+        outcome = reparse_outcome(run, rs, rules, tracks, idx, fps, lang, stats)
+    else:
+        outcome = run_loop(run, video, rs, rules, tracks, merged, idx, lang,
+                           max_steps, stats, on_step=on_step)
+
+    rep = build_report(run, video, rs, rules, tracks, idx, fps, lang, outcome, stats)
+    write_report(rep, run, lang)
+    print(f"-> {run}/report.json · report.md · email.md"
+          f" ({'partial' if rep['partial'] else 'complete'}, {rep['counts']}, usage {rep['usage']['total_tokens']})")
+    return rep
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -736,29 +773,10 @@ def main() -> None:
     ap.add_argument("--reparse", action="store_true", help="rebuild report from agent_raw, no API")
     args = ap.parse_args()
 
-    if not (args.run / "classified.json").exists():
-        sys.exit(f"{args.run}/classified.json missing — run pipeline/classify_tracks.py first")
-    rs, rules = load_ruleset(args.ruleset)
-    tracks, merged = load_tracks(args.run)
-    idx = frame_index(args.run)
-    meta = probe(args.video)
-    fps = fps_of(args.video)
-    stats = {"video": args.video.name, "width": meta["width"], "height": meta["height"],
-             "frames": meta["frames"], "duration": round(meta["frames"] / fps, 1),
-             "tracks": len(tracks), "fps": round(fps, 3)}
-    print(f"{args.run.name}: {len(tracks)} tracks · ruleset {rs['id']} ({len(rs['items'])} items) · "
-          f"{stats['duration']} s · lang {args.lang}")
-
-    if args.reparse:
-        outcome = reparse(args.run, rs, rules, tracks, idx, fps, args.lang, stats)
-    else:
-        outcome = run_loop(args.run, args.video, rs, rules, tracks, merged, idx, args.lang,
-                           args.max_steps, stats)
-
-    rep = build_report(args.run, args.video, rs, rules, tracks, idx, fps, args.lang, outcome, stats)
-    write_report(rep, args.run, args.lang)
-    print(f"-> {args.run}/report.json · report.md · email.md"
-          f" ({'partial' if rep['partial'] else 'complete'}, {rep['counts']}, usage {rep['usage']['total_tokens']})")
+    try:
+        rep = inspect(args.run, args.video, args.ruleset, args.lang, args.max_steps, args.reparse)
+    except FileNotFoundError as exc:
+        sys.exit(str(exc))
     if rep["partial"]:
         sys.exit(2)
 
