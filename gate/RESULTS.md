@@ -80,3 +80,45 @@ Two of the five say the open door is closed, so a single pass is not evidence fo
 label of that track (`fire_door`, rep frame 450) was identical across the passes, so this is model
 variance, not a classification change. Open fix: lower the temperature, or file two independent passes and
 report a disagreement as `needs_human_check` instead of picking one.
+
+### Two-pass agreement — measured 2026-10-28
+
+Both fixes are in (`pipeline/inspect_agent.py`): `temperature: 0.2` (the API takes it — a probe request
+returned HTTP 200 and echoed the value back, so it is set, not guessed), and `view_track` now returns the
+full frame **first**, with the prompt saying that one leaf filling a tight crop looks like a closed door.
+Neither one stops the flip on its own. Three fresh copies of the same clip, run end to end (`--passes 2`),
+give six raw verdicts on `fd_selfclose` for the same open door:
+
+| run | check 1 | check 2 | merged |
+|---|---|---|---|
+| `…-s6a` | ok ("no dark gap beside leaf") | issue ("standing open — dark opening beside leaf") | needs_human_check |
+| `…-s6b` | needs_human_check ("cannot tell latching shut vs standing open") | ok ("no gap or dark opening") | needs_human_check |
+| `…-s6c` | issue ("dark opening/gap visible beside leaf") | needs_human_check ("full frame does not confirm it latches") | needs_human_check |
+
+Two of six checks still call the open door closed, so the variance is in the model, not in what it was
+shown. Merging is what buys the guarantee: **`fd_selfclose` was never `ok` in three out of three runs**,
+where a single pass was `ok` in two of five. The cost is that it is never `issue` either — the ground truth
+is a violation, and no merge of `ok`/`issue`/`needs_human_check` can outvote it into `issue`. For a
+self-inspection form "a person must look at this door" is the right answer; for a demo headline it is a
+weaker scene than the single pass that happened to be right.
+
+`fd_held_open` followed the same door (3/3 `needs_human_check`). `exit_sign_present`, `ext_present`,
+`ext_access`, `ext_condition` and `hc_*` were `ok` in all six checks of all three runs — the things that
+were stable stayed stable.
+
+One regression from merging: `evac_route_obstruct` came out `ok` in one check and `possibly_missing` in the
+other in two of three runs, so it became `needs_human_check` although both checks described a clear
+corridor ("Corridor sections … show clear floor" vs "No corridor obstruction seen in this walk"). That is a
+wording difference, not a judgement difference — the ruleset item forbids something, so "I walked it and
+saw nothing blocking it" is `ok`, and `possibly_missing` is for a fitting that should have been there. The
+prompt does not say that yet. Fix not applied in this stage (it would have changed the prompt in the middle
+of the three runs): make rule 6 say so, or special-case ok/possibly_missing on prohibitive items.
+
+Hospital regression (one copy, `--passes 2`): `evac_route_obstruct` = `issue`, `exit_sign_present` = `ok`,
+one disagreement (`fd_selfclose` ok / needs_human_check). `--reparse` on a two-pass run rebuilds
+`report.json` byte-identical apart from `generated_at`, and an older single-pass run (`agent_raw/step_*.json`
+without pass dirs) still reparses to the same statuses and usage.
+
+Cost: two passes double the agent's model calls (12–13 per run instead of 6). The four runs above cost
+457,897 input + 113,638 output tokens ≈ **$1.06** at $1.25 / $4.25 per million, against $0.13 for one
+single-pass run of the same clip.

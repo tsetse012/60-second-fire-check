@@ -53,20 +53,27 @@ status, timing, cost estimate, log).
    with four tools: `list_tracks`, `view_track` (re-crop any frame that track was seen in, returned to the
    model as images), `get_rule`, `submit_report`. The agent is told not to trust stage-2 labels and to look
    again before it decides; `submit_report` is rejected if it marks something `ok`/`issue` on a track it
-   never re-viewed, or leaves a ruleset item out. Every step's request/response is kept in `agent_raw/`, so
-   `--reparse` rebuilds the report offline.
+   never re-viewed, or leaves a ruleset item out. One verdict drifts: the same crop came back "closed" on
+   the same open door twice in five runs (`gate/RESULTS.md`), so **two independent conversations** run side
+   by side on the same inputs and are merged item by item — same answer twice keeps it, different answers
+   become `needs_human_check` carrying both notes. Every step's request/response is kept per pass in
+   `agent_raw/pass1`, `agent_raw/pass2`, so `--reparse` rebuilds the merged report offline.
 5. Measured against a manual clipboard count in 3 buildings.
 
 ## Inspection agent
 
 ```bash
 uv run pipeline/inspect_agent.py --run runs/<run> --video data/clip.mp4 \
-    --ruleset rulesets/kr-fire.json --lang en          # 12 model steps max
+    --ruleset rulesets/kr-fire.json --lang en          # 12 model steps max per pass
 uv run pipeline/inspect_agent.py --run runs/<run> --video data/clip.mp4 --lang ko --reparse  # no API calls
+uv run pipeline/inspect_agent.py --run runs/<run> --video data/clip.mp4 --passes 1   # one check only
 ```
 
 Writes `report.json`, `report.md` (inspection-form table: 항목 / 결과 / 근거 영상 시점(초) / 비고 / 출처),
-`email.md` (remediation email to the building manager) and the per-step raw records in `agent_raw/`.
+`email.md` (remediation email to the building manager) and the per-step raw records in `agent_raw/passN/`.
+Two checks run by default (`--passes`); each item in `report.json` carries `passes` (every check's status,
+note and evidence) and `agreement`, and `needs_human_check` is what a disagreement becomes. If one check
+never files, the report falls back to the other one and says `single_pass`.
 Statuses are `ok / issue / possibly_missing / needs_human_check / not_checkable` — absence is only ever
 reported as "not seen in this walk", never as proof.
 

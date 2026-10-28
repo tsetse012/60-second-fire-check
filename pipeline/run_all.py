@@ -747,12 +747,13 @@ def run_job(job: Job, *, ruleset: Path | None = None, lang: str = "en",
         # 4. inspection agent ------------------------------------------------
         job.stage("inspect", "running", "agent starting")
 
-        def on_step(step: int, executed: list[dict]) -> None:
+        def on_step(pass_no: int, step: int, executed: list[dict]) -> None:
             for entry in executed:
                 images = entry.get("images") or []
                 job.log("inspect", "tool", describe_tool(entry),
-                        image=rel(images[0]) if images else None)
-            job.stage("inspect", "running", f"step {step}/{max_steps}")
+                        image=rel(images[0]) if images else None, check=pass_no)
+            job.stage("inspect", "running",
+                      f"check {pass_no}/{stage3.DEFAULT_PASSES} · step {step}/{max_steps}")
 
         rep = stage3.inspect(run_dir, work, ruleset=ruleset, lang=lang,
                              max_steps=max_steps, on_step=on_step)
@@ -760,7 +761,8 @@ def run_job(job: Job, *, ruleset: Path | None = None, lang: str = "en",
         job.data["report_summary"] = rep.get("summary") or ""
         items = sum(rep["counts"].values())
         job.stage("inspect", "done",
-                  f"{items} items · " + " · ".join(f"{k} {v}" for k, v in sorted(rep["counts"].items())))
+                  f"{items} items · " + " · ".join(f"{k} {v}" for k, v in sorted(rep["counts"].items()))
+                  + (f" · {len(rep['disagreements'])} disagreed" if rep.get("disagreements") else ""))
         if rep["partial"]:
             raise RuntimeError(f"the agent stopped before submit_report ({rep['stop_reason']})")
 

@@ -297,6 +297,7 @@ function appendFeed(job) {
   for (const entry of log.slice(state.renderedLog)) {
     const row = h("li", `feed-row${entry.kind === "error" ? " error" : ""}`);
     row.append(h("span", "time", entry.at || ""));
+    if (entry.check) row.append(h("span", "check-chip", `check ${entry.check}`));
     row.append(feedText(entry));
     if (entry.image) {
       const img = h("img", "thumb");
@@ -414,6 +415,13 @@ function checklistItem(item) {
 
   const main = h("div", "item-main");
   main.append(h("div", "item-name", item.name_en || item.rule_id));
+  if (item.agreement === false) {
+    const note = (item.passes || [])
+      .map((p) => `check ${p.pass}: ${p.status}`).join(" / ");
+    const flag = h("span", "disagree", `${(item.passes || []).length || 2} checks disagreed`);
+    if (note) flag.title = note;
+    main.append(flag);
+  }
   if (item.note) main.append(h("div", "item-note", item.note));
 
   const ev = h("div", "item-ev");
@@ -471,6 +479,7 @@ function toolLabel(entry) {
 
 function traceRow(entry) {
   const li = h("li", "trace-row");
+  if (entry.pass) li.append(h("span", "check-chip", `check ${entry.pass}`));
   li.append(h("span", "trace-step", `step ${entry.step}`));
   li.append(h("code", null, toolLabel(entry)));
 
