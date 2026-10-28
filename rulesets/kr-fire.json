@@ -1,0 +1,372 @@
+{
+  "id": "kr-fire",
+  "title_ko": "소방시설 외관 자체점검 규칙셋 (영상 확인 항목)",
+  "title_en": "Korean fire-safety visual self-inspection ruleset (video-checkable items)",
+  "jurisdiction": "KR",
+  "compiled": "2026-10-28",
+  "scope_note": "Only items that can be judged from a hand-held corridor video are marked video_checkable. Everything else is kept in the set so the report can say '현장 확인 필요' instead of silently dropping it. Video never proves absence: 'not seen in this footage' = possibly_missing.",
+  "sources": [
+    {
+      "key": "kr-act-fire-facilities",
+      "name": "소방시설 설치 및 관리에 관한 법률 (법률 제18522호, 시행 2022-12-01)",
+      "url": "https://www.law.go.kr/법령/소방시설설치및관리에관한법률",
+      "status": "verified",
+      "method": "law.go.kr DRF API — MST 236977, 조문 제16조·제22조·제23조 직접 조회 (2026-10-28)",
+      "articles_read": ["제16조(피난시설, 방화구획 및 방화시설의 관리)", "제22조(소방시설등의 자체점검)", "제23조(자체점검 결과의 조치 등)"]
+    },
+    {
+      "key": "kr-notice-self-inspection",
+      "name": "소방시설 자체점검사항 등에 관한 고시 (소방청 고시 제2022-71호, 시행 2022-12-01) — [별지 제6호서식] 소방시설등 외관점검표",
+      "url": "https://www.law.go.kr/행정규칙/소방시설자체점검사항등에관한고시",
+      "status": "verified",
+      "method": "law.go.kr DRF 행정규칙 API — 행정규칙일련번호 2100000216342, 별표 0006(외관점검표) 전문 조회 (2026-10-28)"
+    },
+    {
+      "key": "kr-nftc-103",
+      "name": "스프링클러설비의 화재안전기술기준(NFTC 103) (국립소방연구원 공고 제2026-35호, 시행 2026-07-01)",
+      "url": "https://www.law.go.kr/행정규칙/스프링클러설비의화재안전기술기준",
+      "status": "verified",
+      "method": "law.go.kr DRF 행정규칙 API — 행정규칙일련번호 2100000281674, 2.7.7.1·2.7.7.3 조회 (2026-10-28)"
+    },
+    {
+      "key": "kr-act-fire-prevention",
+      "name": "화재의 예방 및 안전관리에 관한 법률 (법률 제21396호, 시행 2026-02-27)",
+      "url": "https://www.law.go.kr/법령/화재의예방및안전관리에관한법률",
+      "status": "unverified",
+      "method": "MST 283705 확인만 함 — 이 규칙셋의 항목에는 아직 인용하지 않음(소방안전관리·소방훈련 조항이라 영상 점검 항목과 직접 대응 없음)"
+    }
+  ],
+  "items": [
+    {
+      "id": "ext_present",
+      "name_ko": "소화기 비치",
+      "name_en": "Portable extinguisher present",
+      "matches_categories": ["fire_extinguisher"],
+      "checks": [
+        "A handheld extinguisher or an extinguisher cabinet is visible somewhere along the walked route.",
+        "If none is seen in this footage, the status is possibly_missing — never 'absent' as a fact: the walk may not have covered the room.",
+        "A green/red extinguisher pictogram sign alone is signage, not an extinguisher."
+      ],
+      "checks_ko": [
+        "보행 구간 어디엔가 소화기(또는 소화기 수납함)가 보여야 한다.",
+        "이 영상에 안 보이면 possibly_missing — '없다'고 단정하지 않는다(촬영 범위 밖일 수 있음).",
+        "소화기 픽토그램 표지는 표지일 뿐 소화기로 세지 않는다."
+      ],
+      "video_checkable": true,
+      "source": "소방시설 자체점검사항 등에 관한 고시 [별지 제6호서식] 1. 소화기구 및 자동소화장치 — 소화기: '구획된 거실(바닥면적 33㎡ 이상)마다 소화기 설치 여부', '거주자 등이 손쉽게 사용할 수 있는 장소에 설치되어 있는지 여부'",
+      "source_url": "https://www.law.go.kr/행정규칙/소방시설자체점검사항등에관한고시",
+      "source_status": "verified"
+    },
+    {
+      "id": "ext_access",
+      "name_ko": "소화기 앞 장애물",
+      "name_en": "Extinguisher access unobstructed",
+      "matches_categories": ["fire_extinguisher"],
+      "checks": [
+        "No box, cart, bin, shelf or furniture directly in front of the extinguisher or its cabinet.",
+        "The extinguisher is not hidden behind a door, curtain or stacked goods.",
+        "If the floor in front of the extinguisher is outside the frame, use needs_human_check."
+      ],
+      "checks_ko": [
+        "소화기(또는 수납함) 바로 앞에 상자·카트·수납장 같은 것이 놓여 있지 않아야 한다.",
+        "문·커튼·적재물 뒤에 가려져 있지 않아야 한다.",
+        "앞쪽 바닥이 화면 밖이면 needs_human_check."
+      ],
+      "video_checkable": true,
+      "source": "소방시설 자체점검사항 등에 관한 고시 [별지 제6호서식] 1. 소화기구 — '거주자 등이 손쉽게 사용할 수 있는 장소에 설치되어 있는지 여부'",
+      "source_url": "https://www.law.go.kr/행정규칙/소방시설자체점검사항등에관한고시",
+      "source_status": "verified"
+    },
+    {
+      "id": "ext_condition",
+      "name_ko": "소화기 넘어짐·변형·손상",
+      "name_en": "Extinguisher not tipped over or damaged",
+      "matches_categories": ["fire_extinguisher"],
+      "checks": [
+        "Tipped over, fallen out of its bracket, or lying on the floor.",
+        "Visibly dented or corroded body, cracked hose, missing nozzle or safety pin.",
+        "Pressure and expiry are NOT judged here — see ext_gauge_tag."
+      ],
+      "checks_ko": [
+        "넘어져 있거나 걸이에서 빠져 바닥에 놓여 있지 않아야 한다.",
+        "본체 찌그러짐·부식, 호스 갈라짐, 노즐·안전핀 없음이 보이면 위반.",
+        "압력·내용연수는 이 항목이 아니라 ext_gauge_tag 에서 다룬다."
+      ],
+      "video_checkable": true,
+      "source": "소방시설 자체점검사항 등에 관한 고시 [별지 제6호서식] 1. 소화기구 — '소화기의 변형·손상 또는 부식이 있는지 여부'",
+      "source_url": "https://www.law.go.kr/행정규칙/소방시설자체점검사항등에관한고시",
+      "source_status": "verified"
+    },
+    {
+      "id": "ext_gauge_tag",
+      "name_ko": "소화기 지시압력계·점검표시·내용연수",
+      "name_en": "Extinguisher gauge, inspection tag, service life",
+      "matches_categories": ["fire_extinguisher"],
+      "checks": [
+        "Pressure gauge needle inside the green band.",
+        "Inspection tag present and dated within the last 12 months.",
+        "Powder extinguishers older than 10 years are due for replacement."
+      ],
+      "checks_ko": [
+        "지시압력계 바늘이 녹색 범위 안에 있어야 한다.",
+        "점검표시(라벨)가 붙어 있고 최근 1년 이내 점검 이력이 있어야 한다.",
+        "수동식 분말소화기는 내용연수 10년을 넘기면 교체 대상이다."
+      ],
+      "video_checkable": false,
+      "source": "소방시설 자체점검사항 등에 관한 고시 [별지 제6호서식] 1. 소화기구 — '지시압력계(녹색범위)의 적정 여부', '수동식 분말소화기 내용연수(10년) 적정 여부'",
+      "source_url": "https://www.law.go.kr/행정규칙/소방시설자체점검사항등에관한고시",
+      "source_status": "verified",
+      "source_note": "조문은 확인됨. 다만 손전등 영상으로 게이지 눈금·라벨 날짜를 판독하는 것은 불가능하므로 video_checkable=false (현장 확인 필요)."
+    },
+    {
+      "id": "hc_access",
+      "name_ko": "옥내소화전함 앞 장애물·문 열림 방해",
+      "name_en": "Hose cabinet front clear and door opens freely",
+      "matches_categories": ["fire_hose_cabinet"],
+      "checks": [
+        "Nothing stacked or parked on the floor in front of the cabinet; the door opens fully.",
+        "Goods, signboards or a parked cart blocking the cabinet face is an issue.",
+        "If the cabinet is visible but the floor in front of it is outside the frame, use needs_human_check."
+      ],
+      "checks_ko": [
+        "함 앞 바닥에 물건이 쌓여 있거나 주차되어 있어 문이 완전히 열리지 않으면 위반.",
+        "적재물·입간판·카트가 함 앞을 막고 있어도 위반.",
+        "함은 보이는데 앞쪽 바닥이 화면 밖이면 needs_human_check."
+      ],
+      "video_checkable": true,
+      "source": "소방시설 자체점검사항 등에 관한 고시 [별지 제6호서식] 2. 옥내·외 소화전 설비 — 함 및 방수구 등: '함 개방 용이성 및 장애물 설치 여부 등 사용 편의성 적정 여부'",
+      "source_url": "https://www.law.go.kr/행정규칙/소방시설자체점검사항등에관한고시",
+      "source_status": "verified"
+    },
+    {
+      "id": "hc_label",
+      "name_ko": "소화전 표지·위치표시등 설치 및 가림",
+      "name_en": "Hose cabinet label and location indicator visible",
+      "matches_categories": ["fire_hose_cabinet"],
+      "checks": [
+        "The cabinet carries the hose-cabinet marking / operating instructions and a location indicator light.",
+        "Posters, shelves or goods must not cover the marking.",
+        "Whether the indicator lamp is lit cannot be settled from video — needs_human_check."
+      ],
+      "checks_ko": [
+        "함에 소화전 표시·사용요령 표지판과 위치표시등이 있어야 한다.",
+        "포스터·선반·적재물이 표지를 가리면 위반.",
+        "위치표시등의 점등 여부는 영상으로 확정할 수 없어 needs_human_check."
+      ],
+      "video_checkable": true,
+      "source": "소방시설 자체점검사항 등에 관한 고시 [별지 제6호서식] 2. 옥내·외 소화전 설비 — '위치표시등 적정 설치 및 정상 점등 여부', '소화전 표시 및 사용요령(외국어 병기) 기재 표지판 설치상태 적정 여부'",
+      "source_url": "https://www.law.go.kr/행정규칙/소방시설자체점검사항등에관한고시",
+      "source_status": "verified"
+    },
+    {
+      "id": "hc_contents",
+      "name_ko": "함 내 소방호스·관창 비치",
+      "name_en": "Hose and nozzle inside the cabinet",
+      "matches_categories": ["fire_hose_cabinet"],
+      "checks": [
+        "Hose and nozzle present inside, hose not folded or kinked.",
+        "This can only be judged when the cabinet is open in the video; otherwise needs_human_check."
+      ],
+      "checks_ko": [
+        "함 안에 소방호스와 관창이 있어야 하고 호스가 꺾여 있지 않아야 한다.",
+        "영상에서 함이 열려 있지 않으면 판정 불가 → needs_human_check."
+      ],
+      "video_checkable": false,
+      "source": "소방시설 자체점검사항 등에 관한 고시 [별지 제6호서식] 2. 옥내·외 소화전 설비 — '함 내 소방호스 및 관창 비치 적정 여부'",
+      "source_url": "https://www.law.go.kr/행정규칙/소방시설자체점검사항등에관한고시",
+      "source_status": "verified",
+      "source_note": "조문은 확인됨. 닫힌 함 내부는 영상으로 볼 수 없어 video_checkable=false."
+    },
+    {
+      "id": "exit_sign_present",
+      "name_ko": "피난구 유도등 설치",
+      "name_en": "Exit sign present on the escape route",
+      "matches_categories": ["exit_sign"],
+      "checks": [
+        "An EXIT / 비상구 / running-man evacuation sign is visible along the walked route.",
+        "If none is seen in this footage, the status is possibly_missing — not 'absent'.",
+        "A directional or room sign with an arrow is not an exit sign."
+      ],
+      "checks_ko": [
+        "보행 구간에 EXIT·비상구·비상구 픽토그램 유도등이 보여야 한다.",
+        "이 영상에 안 보이면 possibly_missing — '없다'고 단정하지 않는다.",
+        "화살표가 있는 안내표지(화장실·방향 표지)는 유도등이 아니다."
+      ],
+      "video_checkable": true,
+      "source": "소방시설 자체점검사항 등에 관한 고시 [별지 제6호서식] 6. 피난기구, 유도등(유도표지), 비상조명등 및 휴대용비상조명등 — 유도등 점검 항목(점등·변형손상·시각장애)",
+      "source_url": "https://www.law.go.kr/행정규칙/소방시설자체점검사항등에관한고시",
+      "source_status": "verified",
+      "source_note": "외관점검표는 설치된 유도등의 상태를 점검한다. 설치 대상·수량 기준은 시행령 별표에 있으나 이 규칙셋은 영상 확인 항목만 인용하므로 인용하지 않았다."
+    },
+    {
+      "id": "exit_sign_obstructed",
+      "name_ko": "유도등 가림(시각장애)",
+      "name_en": "Exit sign not blocked from view",
+      "matches_categories": ["exit_sign"],
+      "checks": [
+        "Posters, banners, ducts, shelves or stacked goods in front of the sign face.",
+        "The sign must be readable from the escape route it serves."
+      ],
+      "checks_ko": [
+        "포스터·현수막·덕트·선반·적재물이 유도등 면을 가리면 위반.",
+        "유도등은 그 피난경로에서 읽을 수 있어야 한다."
+      ],
+      "video_checkable": true,
+      "source": "소방시설 자체점검사항 등에 관한 고시 [별지 제6호서식] 6. 유도등 — '장애물 등으로 인한 시각장애 여부' (유도표지: '설치 상태(쉽게 떨어지지 않는 방식, 장애물 등으로 시각장애 유무) 적정 여부')",
+      "source_url": "https://www.law.go.kr/행정규칙/소방시설자체점검사항등에관한고시",
+      "source_status": "verified"
+    },
+    {
+      "id": "exit_sign_damage",
+      "name_ko": "유도등 변형·손상",
+      "name_en": "Exit sign not deformed or damaged",
+      "matches_categories": ["exit_sign"],
+      "checks": [
+        "Broken or cracked panel, dangling housing, missing pictogram.",
+        "A sign that is physically intact but unreadable at this resolution is needs_human_check, not ok."
+      ],
+      "checks_ko": [
+        "패널 깨짐·파손, 하우징 처짐, 픽토그램 없음이면 위반.",
+        "형태는 멀쩡하나 해상도 때문에 판독이 안 되면 ok 가 아니라 needs_human_check."
+      ],
+      "video_checkable": true,
+      "source": "소방시설 자체점검사항 등에 관한 고시 [별지 제6호서식] 6. 유도등 — '유도등의 변형 및 손상 여부'",
+      "source_url": "https://www.law.go.kr/행정규칙/소방시설자체점검사항등에관한고시",
+      "source_status": "verified"
+    },
+    {
+      "id": "exit_sign_lit",
+      "name_ko": "유도등 상시 점등",
+      "name_en": "Exit sign lit at all times",
+      "matches_categories": ["exit_sign", "emergency_light"],
+      "checks": [
+        "The exit sign must be lit continuously (3-wire type: press the test switch).",
+        "Video can show a dark sign, but brightness alone cannot prove correct lighting — use needs_human_check."
+      ],
+      "checks_ko": [
+        "유도등은 상시 점등되어야 한다(3선식은 점검스위치 작동 시).",
+        "영상에서 어둡게 보이는 것은 단서일 뿐, 점등 상태를 확정할 수 없다 → needs_human_check."
+      ],
+      "video_checkable": false,
+      "source": "소방시설 자체점검사항 등에 관한 고시 [별지 제6호서식] 6. 유도등 — '유도등 상시(3선식의 경우 점검스위치 작동 시) 점등 여부'",
+      "source_url": "https://www.law.go.kr/행정규칙/소방시설자체점검사항등에관한고시",
+      "source_status": "verified",
+      "source_note": "조문은 확인됨. 점등 시험은 영상 판정 불가(video_checkable=false) — 어두운 영상은 needs_human_check 근거로만."
+    },
+    {
+      "id": "fd_selfclose",
+      "name_ko": "방화문 닫힘 유지·자동폐쇄장치",
+      "name_en": "Fire door closed and self-closer working",
+      "matches_categories": ["fire_door"],
+      "checks": [
+        "A fire door stays closed, or closes by itself after use; the self-closer arm is fitted and intact.",
+        "A door propped or latched open, or a closer removed/broken, is an issue.",
+        "A glass shop door or an ordinary corridor door is not a fire door — do not report on it as one."
+      ],
+      "checks_ko": [
+        "방화문은 닫힌 상태를 유지해야 하고, 자동폐쇄장치(도어클로저)가 붙어 정상 작동해야 한다.",
+        "문을 열어 고정했거나 클로저가 없거나 부러졌으면 위반.",
+        "유리 상점문·일반 복도문은 방화문이 아니므로 방화문 항목으로 보고하지 않는다."
+      ],
+      "video_checkable": true,
+      "source": "소방시설 설치 및 관리에 관한 법률 제16조제1항제1호·제3호(방화시설의 폐쇄·훼손, 용도 장애 금지) + 소방시설 자체점검사항 등에 관한 고시 [별지 제6호서식] 10. 기타사항 — '방화문 및 방화셔터의 관리 상태(폐쇄·훼손·변경) 및 정상 기능 적정 여부' (9. '방화문 관리상태 및 정상기능 적정 여부')",
+      "source_url": "https://www.law.go.kr/법령/소방시설설치및관리에관한법률",
+      "source_status": "verified"
+    },
+    {
+      "id": "fd_held_open",
+      "name_ko": "방화문 고임목·열어둠",
+      "name_en": "Fire door not wedged or held open",
+      "matches_categories": ["fire_door"],
+      "checks": [
+        "Door held open by a wedge, rope, chair, hook or a propped carton.",
+        "It is a violation even when the door leaf itself is undamaged."
+      ],
+      "checks_ko": [
+        "고임목·끈·의자·걸쇠·상자로 방화문을 열어둔 상태면 위반.",
+        "문 자체가 멀쩡해도 열어둔 것만으로 위반이다."
+      ],
+      "video_checkable": true,
+      "source": "소방시설 설치 및 관리에 관한 법률 제16조제1항제1호·제3호 + 소방시설 자체점검사항 등에 관한 고시 [별지 제6호서식] 10. 기타사항 — '방화문 및 방화셔터의 관리 상태(폐쇄·훼손·변경)'",
+      "source_url": "https://www.law.go.kr/법령/소방시설설치및관리에관한법률",
+      "source_status": "verified"
+    },
+    {
+      "id": "fd_damage",
+      "name_ko": "방화문 훼손",
+      "name_en": "Fire door not damaged",
+      "matches_categories": ["fire_door"],
+      "checks": [
+        "Holes, broken vision panel, missing leaf, deformed frame or an oversized gap around the leaf."
+      ],
+      "checks_ko": [
+        "문짝 구멍·유리 파손·문짝 없음·틀 변형·문 주변 과대 틈이면 위반."
+      ],
+      "video_checkable": true,
+      "source": "소방시설 설치 및 관리에 관한 법률 제16조제1항제1호(방화시설 훼손 금지) + 소방시설 자체점검사항 등에 관한 고시 [별지 제6호서식] 10. 기타사항 — '방화문 및 방화셔터의 관리 상태(폐쇄·훼손·변경)'",
+      "source_url": "https://www.law.go.kr/법령/소방시설설치및관리에관한법률",
+      "source_status": "verified"
+    },
+    {
+      "id": "detector_condition",
+      "name_ko": "감지기 가림·손상",
+      "name_en": "Detector not covered or damaged",
+      "matches_categories": ["smoke_detector"],
+      "checks": [
+        "Detector head painted over, capped or bagged, or blocked by a shelf, duct or stacked goods.",
+        "Visibly deformed, hanging loose or missing its head.",
+        "A round perforated ceiling grille is an air diffuser, not a detector."
+      ],
+      "checks_ko": [
+        "감지기가 도장·덮개·비닐로 막혀 있거나 선반·덕트·적재물에 가려져 있으면 위반.",
+        "변형되었거나 매달려 있거나 헤드가 없으면 위반.",
+        "천장의 원형 격자는 공조 디퓨저이지 감지기가 아니다."
+      ],
+      "video_checkable": true,
+      "source": "소방시설 자체점검사항 등에 관한 고시 [별지 제6호서식] 5. 자동화재탐지설비 — 감지기: '감지기의 변형 또는 손상이 있는지 여부(단독경보형감지기 포함)'",
+      "source_url": "https://www.law.go.kr/행정규칙/소방시설자체점검사항등에관한고시",
+      "source_status": "verified",
+      "source_note": "손상 항목은 확인됨. '가림(도장·덮개·적재)'은 외관점검표에 명시 항목이 없고 NFTC 203에도 감지기 주위 이격 조항을 찾지 못했다 — 가림 판정은 영상 판단 항목으로만 쓰고, 확인 못 한 조문을 지어내지 않는다."
+    },
+    {
+      "id": "sprinkler_obstruct",
+      "name_ko": "스프링클러 헤드 살수장애·손상",
+      "name_en": "Sprinkler head clear of obstructions and undamaged",
+      "matches_categories": ["sprinkler_head"],
+      "checks": [
+        "Keep a clear space of at least 60 cm around the head; nothing hung on it or stacked under it.",
+        "Pipes, hangers, lighting or storage inside that space block the spray.",
+        "Deformed, painted or missing head."
+      ],
+      "checks_ko": [
+        "헤드 반경 60cm 안은 비워야 한다(헤드에 매달거나 아래에 쌓지 않는다).",
+        "배관·행거·조명·적재물이 그 공간을 막으면 살수장애.",
+        "헤드 변형·도장·없음도 위반."
+      ],
+      "video_checkable": true,
+      "source": "스프링클러설비의 화재안전기술기준(NFTC 103) 2.7.7.1('살수가 방해되지 않도록 스프링클러헤드로부터 반경 60㎝ 이상의 공간을 보유할 것')·2.7.7.3 + 소방시설 자체점검사항 등에 관한 고시 [별지 제6호서식] 3. 스프링클러설비 — '헤드의 변형·손상 유무 및 살수장애 여부'",
+      "source_url": "https://www.law.go.kr/행정규칙/스프링클러설비의화재안전기술기준",
+      "source_status": "verified"
+    },
+    {
+      "id": "evac_route_obstruct",
+      "name_ko": "피난통로·계단 적치물",
+      "name_en": "Escape route free of stored items",
+      "matches_categories": ["corridor_obstruction"],
+      "checks": [
+        "Wheelchairs, carts, boxes, bicycles or pallets parked in the corridor, lobby or on the stairs.",
+        "The escape route must stay passable at its designed width; parked items that narrow it are an issue.",
+        "A wheelchair parked against the corridor wall still counts — it has to be moved in an evacuation."
+      ],
+      "checks_ko": [
+        "복도·로비·계단에 휠체어·카트·상자·자전거·파렛트가 놓여 있으면 위반.",
+        "피난통로는 설계 폭만큼 통행 가능해야 하며, 폭을 좁히는 적치물도 위반.",
+        "복도 벽에 붙여 둔 휠체어도 피난 시 치워야 하므로 적치물로 센다."
+      ],
+      "video_checkable": true,
+      "source": "소방시설 설치 및 관리에 관한 법률 제16조제1항제2호(피난시설·방화구획·방화시설 주위에 물건을 쌓아두거나 장애물을 설치하는 행위 금지) + 소방시설 자체점검사항 등에 관한 고시 [별지 제6호서식] 10. 기타사항 — '비상구 및 피난통로 확보 적정여부(피난·방화시설 주변 장애물 적치 포함)'",
+      "source_url": "https://www.law.go.kr/법령/소방시설설치및관리에관한법률",
+      "source_status": "verified"
+    }
+  ]
+}

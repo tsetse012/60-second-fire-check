@@ -144,11 +144,13 @@ def iou(a: list[int], b: list[int]) -> float:
 
 
 def merge_duplicates(tracks: dict[tuple[str, int], dict]) -> dict[tuple[str, int], tuple[str, int] | None]:
-    """Union tracks of *different* concepts that sit on the same pixels.
+    """Union tracks that sit on the same pixels, within one concept or across two.
 
-    Two tracks are the same object when IoU > MERGE_IOU in at least half of the
-    frames they share (and they share at least 3 frames, which keeps one-frame
-    coincidences out).
+    SAM sometimes splits one object into two IDs of the *same* concept (e.g. two
+    `sign` boxes on the same panel), so the test is not concept identity but
+    overlap. Two tracks are the same object when IoU > MERGE_IOU in at least
+    half of the frames they share (and they share at least 3 frames, which keeps
+    one-frame coincidences out). Rep of a merged group = largest max box.
     """
     keys = list(tracks)
     parent = {k: k for k in keys}
@@ -161,8 +163,6 @@ def merge_duplicates(tracks: dict[tuple[str, int], dict]) -> dict[tuple[str, int
 
     for i, a in enumerate(keys):
         for b in keys[i + 1:]:
-            if a[0] == b[0]:
-                continue
             fa, fb = tracks[a]["frames"], tracks[b]["frames"]
             shared = fa.keys() & fb.keys()
             if len(shared) < 3:

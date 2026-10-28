@@ -1,0 +1,279 @@
+{
+  "id": "nfpa",
+  "title_en": "NFPA-based visual self-inspection ruleset (secondary, clause numbers unverified)",
+  "title_ko": "NFPA 기반 외관 자체점검 규칙셋 (보조 — 조문 번호 미확인)",
+  "jurisdiction": "US (NFPA)",
+  "compiled": "2026-10-28",
+  "scope_note": "Kept as a second rule vocabulary so the same footage can be reported against US practice. We could not read the NFPA documents themselves (nfpa.org requires a login for the code text), so no clause numbers are asserted: every item is source_status=unverified and cites only the standard and the requirement in plain words. Items are the subset of kr-fire.json that has a direct NFPA counterpart.",
+  "sources": [
+    {
+      "key": "nfpa-10",
+      "name": "NFPA 10, Standard for Portable Fire Extinguishers (current edition not verified)",
+      "url": "https://www.nfpa.org/codes-and-standards/nfpa-10-standard-development/10",
+      "status": "unverified",
+      "method": "Clause text is behind a login on nfpa.org — no clause numbers asserted (2026-10-28)"
+    },
+    {
+      "key": "nfpa-101",
+      "name": "NFPA 101, Life Safety Code (current edition not verified)",
+      "url": "https://www.nfpa.org/codes-and-standards/nfpa-101-standard-development/101",
+      "status": "unverified",
+      "method": "Clause text is behind a login on nfpa.org — no clause numbers asserted (2026-10-28)"
+    },
+    {
+      "key": "nfpa-25",
+      "name": "NFPA 25, Standard for the Inspection, Testing, and Maintenance of Water-Based Fire Protection Systems (current edition not verified)",
+      "url": "https://www.nfpa.org/codes-and-standards/nfpa-25-standard-development/25",
+      "status": "unverified",
+      "method": "Clause text is behind a login on nfpa.org — no clause numbers asserted (2026-10-28)"
+    }
+  ],
+  "items": [
+    {
+      "id": "ext_present",
+      "name_ko": "소화기 비치",
+      "name_en": "Portable extinguisher provided where required",
+      "matches_categories": ["fire_extinguisher"],
+      "checks": [
+        "Portable extinguishers are provided in the occupancy and are visible on the walked route.",
+        "If none is seen in this footage, the status is possibly_missing, not 'absent'."
+      ],
+      "checks_ko": [
+        "해당 용도에 맞는 소화기가 설치되어 보행 구간에서 보여야 한다.",
+        "이 영상에 안 보이면 possibly_missing — '없다'고 단정하지 않는다."
+      ],
+      "video_checkable": true,
+      "source": "NFPA 10 — extinguishers shall be provided in accordance with the hazard of the occupancy (clause not verified)",
+      "source_url": "https://www.nfpa.org/codes-and-standards/nfpa-10-standard-development/10",
+      "source_status": "unverified"
+    },
+    {
+      "id": "ext_access",
+      "name_ko": "소화기 접근·가시성",
+      "name_en": "Extinguisher accessible and conspicuous",
+      "matches_categories": ["fire_extinguisher"],
+      "checks": [
+        "Extinguishers are conspicuously located where they will be readily accessible.",
+        "Nothing is stored or parked in front of the extinguisher or its cabinet."
+      ],
+      "checks_ko": [
+        "소화기는 눈에 잘 띄고 쉽게 접근할 수 있는 곳에 있어야 한다.",
+        "소화기(또는 수납함) 앞에 물건을 쌓거나 세워 두지 않는다."
+      ],
+      "video_checkable": true,
+      "source": "NFPA 10 — extinguishers shall be conspicuously located and not obstructed (clause not verified)",
+      "source_url": "https://www.nfpa.org/codes-and-standards/nfpa-10-standard-development/10",
+      "source_status": "unverified"
+    },
+    {
+      "id": "ext_condition",
+      "name_ko": "소화기 넘어짐·손상",
+      "name_en": "Extinguisher not tipped over or damaged",
+      "matches_categories": ["fire_extinguisher"],
+      "checks": [
+        "Extinguisher is in its designated place, not tipped over or fallen.",
+        "No visible dents, corrosion, cracked hose or missing nozzle."
+      ],
+      "checks_ko": [
+        "소화기는 지정된 자리에 바로 서 있어야 한다(넘어짐·이탈 없음).",
+        "찌그러짐·부식·호스 갈라짐·노즐 없음이 없어야 한다."
+      ],
+      "video_checkable": true,
+      "source": "NFPA 10 — monthly visual inspection: extinguisher in designated place, no obvious damage (clause not verified)",
+      "source_url": "https://www.nfpa.org/codes-and-standards/nfpa-10-standard-development/10",
+      "source_status": "unverified"
+    },
+    {
+      "id": "ext_gauge_tag",
+      "name_ko": "소화기 압력계·점검표시",
+      "name_en": "Extinguisher gauge and inspection record",
+      "matches_categories": ["fire_extinguisher"],
+      "checks": [
+        "Gauge reading within the operable range.",
+        "Tag / inspection record present and current."
+      ],
+      "checks_ko": [
+        "지시압력계가 정상 작동 범위에 있어야 한다.",
+        "점검표시(태그)가 붙어 있고 최신이어야 한다."
+      ],
+      "video_checkable": false,
+      "source": "NFPA 10 — inspection, maintenance and recharging intervals (clause not verified)",
+      "source_url": "https://www.nfpa.org/codes-and-standards/nfpa-10-standard-development/10",
+      "source_status": "unverified"
+    },
+    {
+      "id": "hc_access",
+      "name_ko": "소화전함 접근",
+      "name_en": "Hose cabinet accessible",
+      "matches_categories": ["fire_hose_cabinet"],
+      "checks": [
+        "Cabinet door opens fully and nothing is stored against its face."
+      ],
+      "checks_ko": [
+        "함 문이 완전히 열려야 하고 함 앞에 물건이 없어야 한다."
+      ],
+      "video_checkable": true,
+      "source": "NFPA 25 — fire hose valves and cabinets shall be accessible and unobstructed (clause not verified)",
+      "source_url": "https://www.nfpa.org/codes-and-standards/nfpa-25-standard-development/25",
+      "source_status": "unverified"
+    },
+    {
+      "id": "exit_sign_present",
+      "name_ko": "출구 표지 설치",
+      "name_en": "Exit sign marks the way out",
+      "matches_categories": ["exit_sign"],
+      "checks": [
+        "Each required exit is marked with an approved exit sign visible from the escape route.",
+        "If none is seen in this footage, possibly_missing."
+      ],
+      "checks_ko": [
+        "피난경로에서 보이는 출구 표지가 있어야 한다.",
+        "이 영상에 안 보이면 possibly_missing."
+      ],
+      "video_checkable": true,
+      "source": "NFPA 101 — marking of means of egress; exits shall be marked by an approved sign (clause not verified)",
+      "source_url": "https://www.nfpa.org/codes-and-standards/nfpa-101-standard-development/101",
+      "source_status": "unverified"
+    },
+    {
+      "id": "exit_sign_obstructed",
+      "name_ko": "출구 표지 가림",
+      "name_en": "Exit sign not obstructed",
+      "matches_categories": ["exit_sign"],
+      "checks": [
+        "No decorations, stock or fixtures obscure the sign.",
+        "The sign stays legible from the path it serves."
+      ],
+      "checks_ko": [
+        "장식물·적재물·설비가 표지를 가리지 않아야 한다.",
+        "표지는 그 경로에서 읽을 수 있어야 한다."
+      ],
+      "video_checkable": true,
+      "source": "NFPA 101 — exit signs shall be visible and not obscured (clause not verified)",
+      "source_url": "https://www.nfpa.org/codes-and-standards/nfpa-101-standard-development/101",
+      "source_status": "unverified"
+    },
+    {
+      "id": "exit_sign_lit",
+      "name_ko": "출구 표지 점등",
+      "name_en": "Exit sign illuminated",
+      "matches_categories": ["exit_sign", "emergency_light"],
+      "checks": [
+        "Illumination is continuous and tested on the required schedule.",
+        "Video cannot prove correct illumination — needs_human_check."
+      ],
+      "checks_ko": [
+        "출구 표지는 상시 점등되어야 하고 정해진 주기로 시험해야 한다.",
+        "영상으로 점등을 확정할 수 없다 → needs_human_check."
+      ],
+      "video_checkable": false,
+      "source": "NFPA 101 — exit signs shall be illuminated; testing and maintenance per NFPA 101A (clause not verified)",
+      "source_url": "https://www.nfpa.org/codes-and-standards/nfpa-101-standard-development/101",
+      "source_status": "unverified"
+    },
+    {
+      "id": "fd_selfclose",
+      "name_ko": "방화문 닫힘·자동폐쇄",
+      "name_en": "Fire door self-closing and closed",
+      "matches_categories": ["fire_door"],
+      "checks": [
+        "Fire doors are kept closed and self-closing; hardware is intact.",
+        "An ordinary or glass shop door is not a fire door."
+      ],
+      "checks_ko": [
+        "방화문은 닫힘 상태를 유지하고 자동으로 닫혀야 하며 하드웨어가 온전해야 한다.",
+        "일반문·유리 상점문은 방화문이 아니다."
+      ],
+      "video_checkable": true,
+      "source": "NFPA 101 — fire door assemblies: self-closing, kept in the closed position (clause not verified)",
+      "source_url": "https://www.nfpa.org/codes-and-standards/nfpa-101-standard-development/101",
+      "source_status": "unverified"
+    },
+    {
+      "id": "fd_held_open",
+      "name_ko": "방화문 고정 개방",
+      "name_en": "Fire door not wedged open",
+      "matches_categories": ["fire_door"],
+      "checks": [
+        "Doors are not blocked, wedged or held open by any means other than an approved release device."
+      ],
+      "checks_ko": [
+        "승인된 해제장치 외의 방법으로 방화문을 고정 개방하면 안 된다."
+      ],
+      "video_checkable": true,
+      "source": "NFPA 101 — fire doors shall not be blocked or held open except by approved hold-open devices (clause not verified)",
+      "source_url": "https://www.nfpa.org/codes-and-standards/nfpa-101-standard-development/101",
+      "source_status": "unverified"
+    },
+    {
+      "id": "fd_damage",
+      "name_ko": "방화문 훼손",
+      "name_en": "Fire door not damaged",
+      "matches_categories": ["fire_door"],
+      "checks": [
+        "No holes, broken glazing, missing leaf or deformed frame."
+      ],
+      "checks_ko": [
+        "구멍·유리 파손·문짝 없음·틀 변형이 없어야 한다."
+      ],
+      "video_checkable": true,
+      "source": "NFPA 101 — fire door assemblies shall be maintained in good repair (clause not verified)",
+      "source_url": "https://www.nfpa.org/codes-and-standards/nfpa-101-standard-development/101",
+      "source_status": "unverified"
+    },
+    {
+      "id": "detector_condition",
+      "name_ko": "감지기 가림·손상",
+      "name_en": "Detector uncovered and undamaged",
+      "matches_categories": ["smoke_detector"],
+      "checks": [
+        "Detectors are not painted, capped or obstructed by stock or construction.",
+        "A round perforated ceiling grille is an air diffuser, not a detector."
+      ],
+      "checks_ko": [
+        "감지기에 도장·덮개·적재물에 의한 가림이 없어야 한다.",
+        "천장의 원형 격자는 공조 디퓨저이지 감지기가 아니다."
+      ],
+      "video_checkable": true,
+      "source": "NFPA 72 — detectors shall not be obstructed or painted (clause not verified)",
+      "source_url": "https://www.nfpa.org/codes-and-standards/nfpa-72-standard-development/72",
+      "source_status": "unverified"
+    },
+    {
+      "id": "sprinkler_obstruct",
+      "name_ko": "스프링클러 헤드 살수장애",
+      "name_en": "Sprinkler head clearance maintained",
+      "matches_categories": ["sprinkler_head"],
+      "checks": [
+        "Clear space below and around each head; nothing hung from or stacked under it.",
+        "Heads are not painted, deformed or missing."
+      ],
+      "checks_ko": [
+        "헤드 아래·주변 공간을 비워야 하고, 헤드에 매달거나 아래에 쌓지 않는다.",
+        "헤드 도장·변형·없음이 없어야 한다."
+      ],
+      "video_checkable": true,
+      "source": "NFPA 25 — sprinklers shall be free of obstruction and in good condition; required clearance below deflectors (clause not verified)",
+      "source_url": "https://www.nfpa.org/codes-and-standards/nfpa-25-standard-development/25",
+      "source_status": "unverified"
+    },
+    {
+      "id": "evac_route_obstruct",
+      "name_ko": "피난통로 적치물",
+      "name_en": "Means of egress kept clear",
+      "matches_categories": ["corridor_obstruction"],
+      "checks": [
+        "Means of egress are free of stored items, wheelchairs, carts and other obstructions.",
+        "The required width stays usable."
+      ],
+      "checks_ko": [
+        "피난통로에 적재물·휠체어·카트 등 장애물이 없어야 한다.",
+        "필요 폭이 확보되어야 한다."
+      ],
+      "video_checkable": true,
+      "source": "NFPA 101 — means of egress shall be continuously maintained free of all obstructions (clause not verified)",
+      "source_url": "https://www.nfpa.org/codes-and-standards/nfpa-101-standard-development/101",
+      "source_status": "unverified"
+    }
+  ]
+}
