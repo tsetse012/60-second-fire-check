@@ -27,6 +27,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
@@ -318,6 +319,19 @@ def data_uri(p: Path) -> str:
     return "data:image/jpeg;base64," + base64.b64encode(p.read_bytes()).decode()
 
 
+def post_responses(client: httpx.Client, body: dict, attempts: int = 4) -> dict:
+    """POST /responses, retrying 5xx / 429 (a 503 `persistence service error` lasted
+    minutes on 2026-10-29). A failed label is otherwise lost for the whole run."""
+    for n in range(attempts):
+        r = client.post("/responses", json=body, timeout=300)
+        if r.status_code == 200:
+            return r.json()
+        if (r.status_code < 500 and r.status_code != 429) or n == attempts - 1:
+            break
+        time.sleep(5 * 3 ** n)
+    raise RuntimeError(f"HTTP {r.status_code}: {r.text[:400]}")
+
+
 def ask(client: httpx.Client, concept: str, crop: Path, context: Path) -> tuple[dict, dict]:
     """One classification request. Returns (raw response JSON, usage)."""
     body = {
@@ -330,10 +344,7 @@ def ask(client: httpx.Client, concept: str, crop: Path, context: Path) -> tuple[
         "text": {"format": {"type": "json_schema", "name": "track_label",
                             "schema": SCHEMA, "strict": True}},
     }
-    r = client.post("/responses", json=body, timeout=300)
-    if r.status_code != 200:
-        raise RuntimeError(f"HTTP {r.status_code}: {r.text[:400]}")
-    raw = r.json()
+    raw = post_responses(client, body)
     return raw, raw.get("usage") or {}
 
 
@@ -349,10 +360,7 @@ def ask_door_state(client: httpx.Client, context: Path) -> tuple[dict, dict]:
         "text": {"format": {"type": "json_schema", "name": "door_state",
                             "schema": DOOR_STATE_SCHEMA, "strict": True}},
     }
-    r = client.post("/responses", json=body, timeout=300)
-    if r.status_code != 200:
-        raise RuntimeError(f"HTTP {r.status_code}: {r.text[:400]}")
-    raw = r.json()
+    raw = post_responses(client, body)
     return raw, raw.get("usage") or {}
 
 

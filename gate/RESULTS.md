@@ -287,3 +287,24 @@ representative frame invalidates the old crops), so it billed a full classificat
 Still open: the closed fire doors that the footage never shows whole (no frame rule can fix those — the
 camera has to step back), the 0 s cabinet at the end of the first corridor, and the `door_13`/`door_15`
 duplicate that the IoU merge does not catch.
+
+## The full path, run once from the raw clip (2026-10-29)
+
+Stages 6–8 had only been tried on copies of earlier runs. One clean run of `IMG_2559.MOV` through the web
+app's own request (`POST /api/jobs sample=…`) found three things the copies could not:
+
+- **The defaults refused the clip.** With 11 concepts the SAM estimate is $3.19, over the $3.00 default
+  budget, so the app stopped before SAM. And tracks are labelled in order of first appearance with a cap of
+  80, while this walk has ~126 tracks — everything after ~100 s (the closed fire door at 1:54, the A-frame
+  sign at 2:06, the extinguishers at 2:06 and 2:20) would have been silently skipped. Defaults are now $4.00
+  and 140 tracks.
+- **One `503 persistence service error` lasted longer than the inspect retries** (5+15+45+135 s) and failed
+  the whole job in pass 2. Inspect now gives up on the stored chain when 5xx keeps coming and resends the
+  full transcript with `store=false` for the rest of that pass; labelling and SAM requests retry 5xx/429 too
+  (they had no retry: a failed label or (window, concept) was lost for the run). The 503 came back on the
+  rerun and the first retry cleared it.
+- **The result matches the stage-8 copy.** Same 17 statuses (issue 2: fire door held open at 45 s, A-frame
+  sign in the corridor at 136 s), and the same 14 of 18 units against the blind count. The doubtful dark door
+  near the lift (stage 8's `door_13`) did not come back as a fire door.
+
+Cost of the run: SAM 15,950 frames = $3.19; Muse 108 labels + 4 door checks + 23 inspect steps ≈ $1.44.

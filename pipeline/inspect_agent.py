@@ -526,20 +526,32 @@ def post(client: httpx.Client, body: dict, attempts: int = 4) -> dict:
     raise ApiError(*last)
 
 
-def ask(client: httpx.Client, body: dict, history: list) -> dict:
+def ask(client: httpx.Client, body: dict, history: list, state: dict | None = None) -> dict:
     """One model step, falling back to a stateless resend if the chain broke.
 
     The API also drops stored responses (`400 referenced response not found or
     expired`), which killed a run at step 6. When that happens the whole transcript
     is resent without previous_response_id — same conversation, no chain to lose.
+
+    A `503 persistence service error` that outlasts post()'s retries (3.5 min on
+    2026-10-29, pass 2 step 7) is the store side failing, so the resend also sets
+    store=false and `state["stateless"]` keeps the rest of the pass off the chain.
     """
     try:
         return post(client, body)
     except ApiError as exc:
         broken = "referenced response" in exc.message.lower() or "reasoning item" in exc.message.lower()
-        if exc.status == 400 and broken and body.get("previous_response_id"):
-            print("    previous response expired — resending the full transcript statelessly")
-            body.pop("previous_response_id")
+        server_down = exc.status >= 500 or exc.status == 429
+        if (exc.status == 400 and broken and body.get("previous_response_id")) or server_down:
+            if server_down:
+                print(f"    HTTP {exc.status} kept coming on the stored chain — "
+                      "resending the full transcript with store=false")
+                body["store"] = False
+                if state is not None:
+                    state["stateless"] = True
+            else:
+                print("    previous response expired — resending the full transcript statelessly")
+            body.pop("previous_response_id", None)
             # Reasoning items point into the stored response that just expired, so
             # replaying them without the chain is exactly what the API rejects
             # (`Referenced reasoning item ... was not found or has expired`).
@@ -576,15 +588,19 @@ def run_loop(run: Path, video: Path, rs: dict, rules: dict[str, dict], tracks: d
     inputs = [first_user_message(rs, stats, lang)]
     history = list(inputs)  # everything sent so far, for the stateless fallback
     prev_id = None
+    chain = {"stateless": False}  # set by ask() once the stored chain is given up on
 
     with httpx.Client(base_url=BASE_URL, headers={"Authorization": f"Bearer {api_key()}"}) as client:
         for step in range(1, max_steps + 1):
             body = {"model": MODEL, "instructions": instructions, "tools": TOOLS,
                     "parallel_tool_calls": False, "input": inputs, "store": True,
                     "temperature": TEMPERATURE}
-            if prev_id:
+            if chain["stateless"]:
+                body["store"] = False
+                body["input"] = [h for h in history if h.get("type") != "reasoning"]
+            elif prev_id:
                 body["previous_response_id"] = prev_id
-            raw = ask(client, body, history)
+            raw = ask(client, body, history, chain)
             step_path = raw_dir / f"step_{step:02d}.json"
             record = {"step": step, "pass": pass_no,
                       "sent_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),

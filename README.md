@@ -25,7 +25,7 @@ server's environment and never reaches the browser.
 
 ```bash
 uv run pipeline/run_all.py data/hospital-corridor-static.mp4 --dry-run   # preprocess + cost estimate
-uv run pipeline/run_all.py data/clip.mp4 --fps 10 --max-cost 3            # full run
+uv run pipeline/run_all.py data/clip.mp4 --fps 10 --max-cost 4            # full run (145 s walk ≈ $3.2 of SAM)
 ```
 
 Preprocessing (H.264, long side 1920, 10 fps, up to 3 minutes) is the one timeline every later stage

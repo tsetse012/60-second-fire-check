@@ -67,8 +67,12 @@ EXCLUDE_FROM_CLASSIFY = frozenset({"person"})  # privacy: never sent to the labe
 DEFAULT_FPS = 10.0
 MAX_SECONDS = 180.0
 TARGET_LONG_SIDE = 1920  # 1280 shrank a far EXIT sign to 24x14 px (needs_human_check); SAM bills per frame, not pixel
-DEFAULT_MAX_COST = 3.0
+DEFAULT_MAX_COST = 4.0  # 11 concepts x 145 s = $3.19 estimate; 3.0 stopped the demo clip before SAM
+# Tracks are labelled in order of first appearance, so a low cap silently drops the end of the walk
+# (IMG_2559: 129 tracks with the stage-8 concepts; 80 cut everything after ~100 s).
+DEFAULT_MAX_TRACKS = 140
 SAM_WORKERS = 4
+SAM_ATTEMPTS = 3  # a lone HTTP 500 dropped a (window, concept) on 2026-10-28
 DEFAULT_WINDOW_S = 10.0  # SAM 3.1 video tracks at most 16 unique objects per *request* (gate/RESULTS.md)
 WINDOW_IOU = 0.3  # last frame of window k vs first frame of window k+1 — same object?
 PRICE_PER_1K_FRAMES = stage1.PRICE_PER_1K_FRAMES
@@ -464,13 +468,22 @@ def run_sam(job: Job, video: Path, run_dir: Path, concepts: list[str], workers: 
         def one(w: dict, concept: str) -> tuple[tuple[str, int], dict]:
             slug = concept.replace(" ", "_")
             raw_path = run_dir / f"{slug}.w{w['index']:02d}.sse.jsonl"
-            try:
-                with httpx.Client(base_url=stage1.BASE_URL, headers=headers) as client:
-                    call = stage1.segment(client, file_ids[w["index"]], concept, raw_path)
-            except Exception as exc:  # one broken request must not sink the run
-                call = {"http_status": None, "error": f"{type(exc).__name__}: {exc}",
-                        "seconds_total": None, "seconds_to_first_frame": None,
-                        "frames_processed": None}
+            for attempt in range(SAM_ATTEMPTS):
+                try:
+                    with httpx.Client(base_url=stage1.BASE_URL, headers=headers) as client:
+                        call = stage1.segment(client, file_ids[w["index"]], concept, raw_path)
+                except Exception as exc:  # one broken request must not sink the run
+                    call = {"http_status": None, "error": f"{type(exc).__name__}: {exc}",
+                            "seconds_total": None, "seconds_to_first_frame": None,
+                            "frames_processed": None}
+                status = call.get("http_status")
+                if status == 200 or (status is not None and status < 500 and status != 429):
+                    break
+                if attempt < SAM_ATTEMPTS - 1:  # 5xx / 429 / dropped stream: try again
+                    job.log("sam", "info", f"{concept} w{w['index']:02d} — HTTP {status}, "
+                                           f"retry {attempt + 1} in {10 * 3 ** attempt}s")
+                    time.sleep(10 * 3 ** attempt)
+            call["attempts"] = attempt + 1
             call.update({"window": w["index"], "start": w["start"], "end": w["end"]})
             return (concept, w["index"]), call
 
@@ -691,7 +704,7 @@ def describe_tool(step: dict) -> str:
 
 
 def run_job(job: Job, *, ruleset: Path | None = None, lang: str = "en",
-            max_steps: int | None = None, max_tracks: int = 80, overlay: bool = True,
+            max_steps: int | None = None, max_tracks: int = DEFAULT_MAX_TRACKS, overlay: bool = True,
             sam_workers: int = SAM_WORKERS, sam_reparse: bool = False,
             classify_reparse: bool = False, add_concepts: list[str] | None = None) -> dict:
     """Run every stage for one job. Never raises: failures land in job.json.
@@ -861,7 +874,7 @@ def main() -> None:
     ap.add_argument("--window", type=float, default=DEFAULT_WINDOW_S,
                     help="seconds per SAM request (default 10: SAM tracks at most 16 objects "
                          "per request, so long clips are split and stitched)")
-    ap.add_argument("--max-tracks", type=int, default=80,
+    ap.add_argument("--max-tracks", type=int, default=DEFAULT_MAX_TRACKS,
                     help="tracks to label (windowing multiplies track IDs: ~76 for a 145 s walk)")
     ap.add_argument("--max-steps", type=int, default=stage3.DEFAULT_MAX_STEPS)
     ap.add_argument("--ruleset", type=Path, default=REPO / "rulesets" / "kr-fire.json")
