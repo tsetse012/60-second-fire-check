@@ -260,15 +260,29 @@ as above.
 Hospital regression (`…-s8h`, copied from `…-s7h`): re-classified and re-inspected with no new SAM spend
 (its door crops are at the same frames, so the four saved door-state answers still describe them) — all 17
 items came back with the same status (`evac_route_obstruct = issue` on the parked wheelchair and cart,
-`exit_sign_present = ok`), and the one disagreement stage 7 had (`fd_held_open`) is now agreement. Two
-concepts (`fire hose cabinet`, `standing sign`) have no saved stream for that clip, so the job says
-"2 concept(s) failed" and $0.00 — they were not requested; the regression did not need them.
+`exit_sign_present = ok`), and the one disagreement stage 7 had (`fd_held_open`) is now agreement. Two concepts (`fire hose cabinet`, `standing sign`) have no saved stream
+for that clip, so the job reports "2 not requested" and $0.00 — they were not sent; the regression did not
+need them. Rebuilding that copy with plain `--reparse` afterwards reproduced all 17 statuses and evidence
+tracks with **zero model calls**.
 
-Cost of stage 8: SAM **$0.60** probe + **$0.58** new concepts = **$1.18** (hospital $0.00); Muse **151 calls**
-— 110 classification, 6 door state, 15 inspection on `-s8`, 6 + 14 on the hospital copy — ≈ **$1.49**
-(508,593 input / 200,244 output tokens, incl. the hospital copy's 4 saved door answers re-read at $0). That is one call over the 150-call budget the stage was given:
-the hospital regression was kept at two passes so it stays comparable with its stage-7 baseline, which
-cost two calls; the four door-state calls were not paid again (saved answers on identical frames).
+### Label stability across two identical passes
+
+Re-running the classification on the same crops (the `s8-reparse-check` copy below, an unplanned second
+pass) flipped **9 of 110 labels** between categories — mostly `unclear ↔ not_fire_equipment` on small blurry
+signs, plus `fire_extinguisher_4` (a reflection of the foreground cylinder) and `exit_sign_8`/`_11` both
+ways. Every report item kept its status; the flips were inside the undecided buckets or on duplicate tracks,
+and the only visible effect was which track each item cites (`evac_route_obstruct` cited `standing_sign_0`
+instead of `standing_sign_39` — both are real A-frames). So a single stage-2 label is ~92 % reproducible at
+temperature 0.2, and the report is stable because the agent re-views tracks before filing.
+
+Cost of stage 8: SAM **$0.60** probe + **$0.58** new concepts = **$1.18** (hospital $0.00); Muse **261 calls**
+≈ **$2.30** (691,673 input / 337,679 output tokens) — **111 over the 150-call budget the stage was given**, and
+the overrun is a mistake worth naming: 110 of those calls came from a run meant to prove that re-adding a
+concept is free. It proved half of that — the SAM side rebuilt all 165 saved streams with 0 requests — but
+`--reparse --add-concepts` also re-classifies every track by design (a new concept has no labels, and a moved
+representative frame invalidates the old crops), so it billed a full classification pass instead of reading
+`muse_raw/`. The flag combination was in `main()` and was not read before launching. The planned spend was
+110 + 6 + 15 (memo: 131) on `-s8` plus 6 + 14 on the hospital copy with its 4 door answers reused, i.e. 151.
 
 Still open: the closed fire doors that the footage never shows whole (no frame rule can fix those — the
 camera has to step back), the 0 s cabinet at the end of the first corridor, and the `door_13`/`door_15`
