@@ -96,6 +96,7 @@ def segment(client: httpx.Client, file_id: str, concept: str, raw_path: Path) ->
     first_delta = None
     status = None
     error = None
+    frames_processed = None
     with raw_path.open("w") as raw, client.stream("POST", "/responses", json=body, timeout=1800) as r:
         status = r.status_code
         if r.status_code != 200:
@@ -108,11 +109,18 @@ def segment(client: httpx.Client, file_id: str, concept: str, raw_path: Path) ->
                 payload = line[5:].strip()
                 raw.write(payload + "\n")
                 try:
-                    kind = json.loads(payload).get("type")
+                    event = json.loads(payload)
                 except (json.JSONDecodeError, AttributeError):
                     continue
+                kind = event.get("type")
                 if kind == "response.output_text.delta" and first_delta is None:
                     first_delta = time.monotonic() - t0
+                elif kind == "response.completed":
+                    # What the meter bills: every frame the model looked at, whether
+                    # or not an object came back for it. `frames_returned` (frames
+                    # with objects) is far smaller and is not the cost.
+                    usage = (event.get("response") or {}).get("usage") or event.get("usage") or {}
+                    frames_processed = usage.get("video_frames_processed")
                 elif kind in {"error", "response.failed", "response.incomplete"}:
                     error = payload
     return {
@@ -120,6 +128,7 @@ def segment(client: httpx.Client, file_id: str, concept: str, raw_path: Path) ->
         "error": error,
         "seconds_total": round(time.monotonic() - t0, 2),
         "seconds_to_first_frame": round(first_delta, 2) if first_delta else None,
+        "frames_processed": frames_processed,
     }
 
 

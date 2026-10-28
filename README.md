@@ -38,11 +38,15 @@ status, timing, cost estimate, log).
 ## Pipeline
 
 1. Phone video (1–3 min) of corridors, stairwells, parking levels.
-2. **SAM 3.1 video** with generic concepts only (`door`, `sign`, `red box`, `wheelchair`) — stable track IDs
-   and boxes. Fire-specific nouns are unreliable here; see `gate/RESULTS.md`.
+2. **SAM 3.1 video** with generic concepts only (`exit sign`, `red box`, `fire extinguisher`, `door`,
+   `wheelchair`) — stable track IDs and boxes. Fire-specific nouns are unreliable here; see
+   `gate/RESULTS.md`. SAM tracks at most **16 unique objects per request**, so the clip is cut into
+   non-overlapping `--window` windows (default 10 s) and the tracks on either side of each cut are
+   joined when their boxes overlap (IoU > 0.3); the stitched track files keep the IDs stage 2 and 3 read.
 3. **Track classification** (`pipeline/classify_tracks.py`) — crops the largest frame of every track plus a
    boxed context frame and asks `muse-spark-1.3` what each one is (fire hose cabinet / exit sign / not fire
-   equipment / unclear), with a condition, confidence and one-sentence evidence. Tracks that sit on the
+   equipment / unclear), with a condition, confidence and one-sentence evidence. Four requests are in
+   flight at a time; the outputs are still written in track order. Tracks that sit on the
    same pixels are merged, within one concept or across two.
 4. **Inspection agent** (`pipeline/inspect_agent.py`) — the classified tracks plus a ruleset
    (`rulesets/kr-fire.json`, 17 Korean self-inspection items; `rulesets/nfpa.json`) go to `muse-spark-1.3`

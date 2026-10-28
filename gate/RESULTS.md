@@ -33,3 +33,29 @@ not as a fire-equipment classifier. Pipeline becomes two stages:
 
 Still unverified: Korean apartment corridors (floor-standing extinguishers, green exit signs);
 this footage is not Korean. Next gate = own footage.
+
+## 16 unique objects per request — measured 2026-10-28
+
+Own phone footage (`data/IMG_2559.MOV`, 1080x1920, 1449 frames at 10 fps, 145 s) showed the limit:
+
+- One request over the whole clip: `door` and `sign` each stopped at exactly **16 unique IDs**, and
+  `sign` found no new object after frame 776 (77 s). The green evacuation lights at 70–100 s were never
+  tracked, so the checklist reported `exit_sign_present = possibly_missing` — wrong.
+- One request over a 30 s crop (`data/seg-70-100.mp4`, 300 frames): `sign` used all 16 IDs within 7.5 s
+  and returned nothing after frame 74.
+- `max_objects_in_frame` stayed ≤ 9 in both, so the cap is **16 unique objects per request**, not per frame
+  (the day-1 note above read the documented limit as per-frame).
+
+Fix: `pipeline/run_all.py` cuts the preprocessed clip into `--window` windows (default 10 s = fps x 10
+frames) and sends one request per (window, concept). A track on the last frame of window k and a track on
+the first frame of window k+1 are the same object when their boxes overlap (IoU > 0.3), so IDs stay global;
+the per-window SSE streams are kept as `<slug>.w<k>.sse.jsonl` and `--reparse` rebuilds the stitched
+timeline without calling the API. Same footage, 135 requests: no window used more than 10 IDs (worst =
+`door`), `exit sign` tracks 219–731 and 1065–1385 (the second one is the 107–139 s stretch that was
+invisible before), and the checklist now reads `exit_sign_present = ok` at 74.7 s.
+
+Billing: `usage.video_frames_processed` sums to 12,950 for that run against 13,041 frames expected
+(9 concepts x 1,449) — the difference is one failed request and a **50-frame minimum per request**: the
+last, 49-frame window is billed 50, and on a 21 s clip whose tail window is 10 frames the same floor
+costs 40 x 9 = 360 frames (2,250 billed vs 1,890 expected). Splitting is free for windows of 50 frames
+or more; a sub-5 s tail should be merged into the window before it if cost matters.

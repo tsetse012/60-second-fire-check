@@ -27,6 +27,7 @@ import os
 import subprocess
 import sys
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -44,6 +45,7 @@ CROP_LONG_SIDE = 768
 CONTEXT_LONG_SIDE = 1024
 MERGE_IOU = 0.5
 MERGE_FRAME_SHARE = 0.5
+CLASSIFY_WORKERS = 4  # one crop takes ~6 s of model time; 4 in flight keeps a 40-track run near 60 s
 BOX_COLOR = (255, 0, 255)
 
 CATEGORIES = [
@@ -396,19 +398,40 @@ def classify(run: Path, video: Path, max_tracks: int = 60, *, reparse: bool = Fa
             frames = extract_frames(video, sorted({tracks[k]["rep_frame"] for k in selected}),
                                     Path(tmp))
             headers = {"Authorization": f"Bearer {api_key()}"}
-            with httpx.Client(base_url=BASE_URL, headers=headers) as client:
-                for k in selected:
-                    slug, oid, tr = k[0], k[1], tracks[k]
-                    crop, ctx = crops / f"{slug}_{oid}.jpg", crops / f"{slug}_{oid}_ctx.jpg"
-                    im = Image.open(frames[tr["rep_frame"]]).convert("RGB")
-                    save_crop(im, tr["rep_box"], tr["wh"], crop)
-                    save_context(im.copy(), tr["rep_box"], tr["wh"], ctx,
-                                 f"{slug} #{oid} frame {tr['rep_frame']}")
-                    filled[k] = {"crop": str(crop), "context": str(ctx), "error": None}
-                    raw_path = raw_dir / f"{slug}_{oid}.json"
+            for k in selected:  # crops are local and fast; cut them in order first
+                slug, oid, tr = k[0], k[1], tracks[k]
+                crop, ctx = crops / f"{slug}_{oid}.jpg", crops / f"{slug}_{oid}_ctx.jpg"
+                im = Image.open(frames[tr["rep_frame"]]).convert("RGB")
+                save_crop(im, tr["rep_box"], tr["wh"], crop)
+                save_context(im.copy(), tr["rep_box"], tr["wh"], ctx,
+                             f"{slug} #{oid} frame {tr['rep_frame']}")
+                filled[k] = {"crop": str(crop), "context": str(ctx), "error": None}
+
+            def work(key: tuple[str, int]) -> tuple[tuple[str, int], dict | None, dict, str | None]:
+                slug, oid = key
+                try:
+                    with httpx.Client(base_url=BASE_URL, headers=headers) as client:
+                        raw, usage = ask(client, slug.replace("_", " "),
+                                         crops / f"{slug}_{oid}.jpg",
+                                         crops / f"{slug}_{oid}_ctx.jpg")
+                except Exception as exc:
+                    return key, None, {}, f"{type(exc).__name__}: {exc}"
+                return key, raw, usage, None
+
+            # Four requests in flight; map() keeps `selected` order, so the raw files
+            # and the printed lines are deterministic whatever finishes first.
+            results: dict[tuple[str, int], tuple] = {}
+            with ThreadPoolExecutor(max_workers=CLASSIFY_WORKERS) as pool:
+                for key, raw, usage, error in pool.map(work, selected):
+                    results[key] = (raw, usage, error)
+
+            for k in selected:
+                slug, oid = k
+                raw, usage, error = results[k]
+                if error is None:
                     try:
-                        raw, usage = ask(client, slug.replace("_", " "), crop, ctx)
-                        raw_path.write_text(json.dumps(raw, indent=2, ensure_ascii=False))
+                        (raw_dir / f"{slug}_{oid}.json").write_text(
+                            json.dumps(raw, indent=2, ensure_ascii=False))
                         calls += 1
                         for kk in usage_total:
                             usage_total[kk] += usage.get(kk) or 0
@@ -417,9 +440,11 @@ def classify(run: Path, video: Path, max_tracks: int = 60, *, reparse: bool = Fa
                               f"({labels[k]['confidence']})")
                     except Exception as exc:  # keep going; the row records the failure
                         filled[k]["error"] = f"{type(exc).__name__}: {exc}"
-                        print(f"  {slug}#{oid} -> ERROR {filled[k]['error'][:160]}")
-                    if on_track:
-                        on_track(k, labels.get(k), filled[k].get("error"))
+                if error is not None or filled[k]["error"]:
+                    print(f"  {slug}#{oid} -> ERROR {(error or filled[k]['error'])[:160]}")
+                    filled[k]["error"] = error or filled[k]["error"]
+                if on_track:
+                    on_track(k, labels.get(k), filled[k].get("error"))
     else:
         for k in selected:
             slug, oid = k
