@@ -4,6 +4,7 @@ import {Title} from './Title';
 import {Beat} from './Beat';
 import {Lines} from './Lines';
 import {Count} from './Count';
+import {Film, FilmVO, FILM_FRAMES} from './Film';
 
 export const Root: React.FC = () => (
   <>
@@ -12,6 +13,8 @@ export const Root: React.FC = () => (
       defaultProps={{word: 'TRACK', sub: 'SAM 3.1'}} />
     <Composition id="Opener" component={Lines} durationInFrames={156} fps={24} width={1920} height={1080}
       defaultProps={{lines: ['Every building', 'has a door', 'that should be closed.'], every: 52}} />
+    <Composition id="Film" component={Film} durationInFrames={FILM_FRAMES} fps={24} width={1920} height={1080} />
+    <Composition id="FilmVO" component={FilmVO} durationInFrames={FILM_FRAMES} fps={24} width={1920} height={1080} />
     <Composition id="Count" component={Count} durationInFrames={192} fps={24} width={1920} height={1080} />
   </>
 );
