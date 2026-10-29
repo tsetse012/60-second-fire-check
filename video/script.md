@@ -1,4 +1,4 @@
-# 3-minute demo video — script v1 (2026-10-29)
+# 3-minute demo video — script v2 (2026-10-29, after fact-check `.omc/handoffs/agents/video-factcheck.md`)
 
 Voice: ElevenLabs, English, one narrator, calm and plain. Target ≈ 400 words at ~140 wpm, with breathing
 room for the screen. Every number below is traced to a file in this repo (see "Claims" at the end).
@@ -12,43 +12,45 @@ Timing is the cut; word counts are the budget for each block.
 ## 1 · The problem — 0:00–0:20 (≈ 45 words)
 
 **Screen:** phone footage walking a corridor, real speed. At 0:12 the walk reaches the white fire door
-standing open (overlay timestamp 45 s). Freeze. A red box draws around the door.
+standing open (source 44.5 s — both leaves open, closer visible on the right leaf). Freeze. A red outline
+is drawn around the door **in the edit** (the product overlay colours by object type, so this door is
+green there — never call a green box a violation on screen).
 
 > This fire door should be shut. Propped open, it lets smoke into the corridor.
-> In Korea, building owners are required by law to inspect their own fire equipment.
-> Today that means a clipboard, a paper checklist and a walk down every corridor.
+> In Korea, building owners and managers are required by law to inspect their own fire equipment.
+> Today that means a paper checklist, filled in on foot.
 
-**On-screen text (0:14):** `Fire Facilities Act, Art. 22 — owners must self-inspect`
+**On-screen text (0:14):** `Fire Facilities Act, Art. 22 — owners and managers must self-inspect`
 
 ## 2 · What it does — 0:20–0:40 (≈ 45 words)
 
-**Screen:** the live site. Drop the phone video on the upload area, type the passcode, press
-**Run inspection**. Cut to the progress screen — stage list ticking, tool calls streaming in.
-Corner tag: `sped up`.
+**Screen:** the live site. Drop a ~60 s corridor clip (no people) on the upload area, type the passcode
+(blurred), press **Run inspection**. Cut to the progress screen — stage list ticking, tool calls streaming
+in. Corner tag: `sped up`.
 
 > 60-Second Fire Check turns that walk into the inspection.
-> Film the corridor on your phone, upload it, and a few minutes later you get a filled-in checklist,
-> with a timestamp for every finding and an email for the building manager.
+> Film the corridor on your phone and upload it. About fifteen minutes later you get a filled-in
+> checklist, with a timestamp for every finding and an email for the building manager.
 
 ## 3 · How: two Meta models, three jobs — 0:40–1:40 (≈ 140 words)
 
 **3a · Track (0:40–1:00).** Screen: the overlay video, boxes following doors, extinguishers, signs.
 
-> SAM 3.1 follows every object through the video and keeps its identity from frame to frame,
-> so one extinguisher is counted once, not thirty times.
+> SAM 3.1 follows each object through the video and keeps one identity for it while it stays on screen.
 > It tracks sixteen objects per request at most, so the walk is cut into ten-second windows
-> and stitched back together where they overlap.
+> and stitched back together at the seams.
 
-**3b · Label (1:00–1:15).** Screen: grid of crops, each with its Muse Spark label appearing.
+**3b · Label (1:00–1:15).** Screen: an edit graphic built from the run's real `crops/` — a grid of
+tracked objects, each with its Muse Spark label appearing (not an app screen).
 
 > SAM finds "a door" or "a red box", not "a fire door". So Muse Spark looks at each tracked object,
 > in the frame where it is fully in view, and names it.
 
 **3c · Inspect (1:15–1:40).** Screen: the agent's tool-call feed — `list_tracks`, `view_track`,
-`get_rule`, `submit_report` — then the two passes side by side.
+`get_rule`, `submit_report` — then the "How the agent checked" tab with its `check 1` / `check 2` chips.
 
 > Then an inspection agent works through seventeen rules from the Korean self-inspection form.
-> It must open the footage before it can pass or fail anything.
+> If it tries to pass or fail an item without opening the footage, it is sent back.
 > It runs twice, independently, and where the two runs disagree, the item goes to a person.
 > Whether a door is open is asked as a single question of its own: inside the long checklist, that
 > answer flipped.
@@ -59,9 +61,10 @@ Corner tag: `sped up`.
 filling in on the right. Big number: `9 / 18 → 14 / 18`.
 
 > I counted the same walk by hand, without looking at the results: eighteen items.
-> The first version found nine. Fixing how we choose the frame, and two object names, brought it to fourteen.
+> The first version found nine. Picking a better frame, adding two object names, and counting
+> free-standing signs as obstructions brought it to fourteen.
 
-**Screen:** the closed fire door at 1:18 — the door's top edge never enters the frame.
+**Screen:** the closed fire door at 1:20–1:22 (source 79.5–82 s) — the door's top edge never enters the frame.
 
 > Three of the four it still misses are closed fire doors whose top, where the closer sits, was never in
 > the shot. That is a filming rule, not a model problem: keep the whole door in frame once.
@@ -80,8 +83,8 @@ email draft. Then the "not seen" rows.
 
 **Screen:** URL + GitHub link, ruleset JSON file scrolling.
 
-> Built in ten days on SAM 3.1 and Muse Spark. The rules live in one JSON file with their legal sources,
-> so another country's code is a file swap.
+> Built this week on SAM 3.1 and Muse Spark. The rules are data, not code: one file, every item
+> tied to its legal source.
 > 60-Second Fire Check.
 
 **End card:** `firecheck.getnunchi.app · github.com/tsetse012/60-second-fire-check`
@@ -92,26 +95,32 @@ email draft. Then the "not seen" rows.
 
 | line in script | source |
 |---|---|
-| owners required to self-inspect | 소방시설법 제22조① (law.go.kr DRF, MST 236977, read 2026-10-29); `rulesets/kr-fire.json` sources |
+| owners and managers (관계인) required to self-inspect | 소방시설법 제22조① (law.go.kr DRF, MST 236977, read 2026-10-29); `rulesets/kr-fire.json` sources |
 | fire door must not be left open / no stored items in escape route | 소방시설법 제16조①1·2·3호; `rulesets/kr-fire.json` `fd_selfclose`, `evac_route_obstruct` |
 | open door at 45 s | `runs/…-IMG_2559-show/report.json` `fd_selfclose` issue 45.0 s; `eval/IMG_2559.groundtruth.json` (same door first seen 24 s) |
-| SAM keeps identity frame to frame | `gate/RESULTS.md` day-1 gate (IDs held 100 % within span) |
-| 16 objects per request → 10-second windows, stitched on overlap | `gate/RESULTS.md` stage 5; `pipeline/run_all.py` window logic; commit b35ba0b, 6c27770 |
+| SAM keeps one identity while on screen (not a unique count: 13 extinguisher tracks vs 7 real) | `gate/RESULTS.md` day-1 gate (IDs held 100 % within span) |
+| 16 objects per request → 10-second windows, stitched at the seams (box IoU > 0.3) | `gate/RESULTS.md` stage 5; `pipeline/run_all.py` window logic; commit b35ba0b, 6c27770 |
 | fire-specific names missed → generic track + Muse Spark label | `gate/RESULTS.md` gate result; commit 0adfa73 |
 | frame where the object is fully in view | `pipeline/classify_tracks.py` `pick_rep_frame`; commit 7e4f75d |
 | 17 rules from the Korean self-inspection form | `rulesets/kr-fire.json` (17 items, 별지 제6호서식) |
 | must open footage before pass/fail | `pipeline/inspect_agent.py` (rejects ok/issue without viewed evidence) |
 | two independent runs, disagreement → person | commit 26fee17 |
 | door state as a single question | commit 0a1e8bd; README decision log 10/28 (10/10 open on single question vs 2/5 flips in the long loop) |
-| 18 items, blind, 9 → 14 | `eval/IMG_2559.groundtruth.json`; `gate/RESULTS.md` "Measuring against a blind human count" |
+| 18 items, blind, 9 → 14 (three fixes: frame rule, two concepts, free-standing sign = obstruction) | `eval/IMG_2559.groundtruth.json`; `gate/RESULTS.md` "Measuring against a blind human count" |
 | 3 of 4 misses = door top never in frame | `gate/RESULTS.md` Fault 1 table (door_24, door_26, door_28/29) |
 | timestamp chip seeks the video | `app/static/app.js` |
 | "not seen" ≠ missing | `rulesets/kr-fire.json` scope_note |
-| ten days | build window 10/27–11/4 (first commit 10/28) |
+| this week | first commit 2026-10-28 (`7bfba01`); recording 11/3 |
 
-## Open points for v2
+| about fifteen minutes | cold run of the 145 s walk: preprocess 16 s + SAM 338 s + classify 209 s + inspect ≈200 s + overlay ≈203 s ≈ 16 min (`runs/20261029-082301-IMG_2559*/job.json`) |
+| must open footage or be sent back | `pipeline/inspect_agent.py:364-370` (after 2 rejections the gap is recorded, not hidden) |
 
-- 0:12 freeze: confirm the exact overlay frame where the open door is clearest (≈ 45 s).
-- Section 4: "two object names" = `fire hose cabinet`, `standing sign` — fine to say on screen, not in voice.
-- Whether to show the passcode field on screen (blur the typed value either way).
-- Live run for section 2 is recorded once on the public site (≈ $4.6) — the upload must be a clip with no people.
+## Open points
+
+- **Product mismatch to fix before recording:** the overlay colours boxes by object type, so the open fire
+  door that the checklist marks as an issue is drawn green, while the legend under the video says
+  "red: problem". Either colour a track red when the report cites it as an issue, or change the legend.
+- Live upload for section 2: a ~60 s cut with no people keeps the run near 6–7 minutes and ≈ $1.5–2.
+  The public server's CPU is slower than this Mac — time one run there before recording.
+- Section 4: "two object names" = `fire hose cabinet`, `standing sign` — on screen, not in voice.
+- Passcode field: blur the typed value.
