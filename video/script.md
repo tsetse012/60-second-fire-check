@@ -12,9 +12,9 @@ Timing is the cut; word counts are the budget for each block.
 ## 1 · The problem — 0:00–0:20 (≈ 45 words)
 
 **Screen:** phone footage walking a corridor, real speed. At 0:12 the walk reaches the white fire door
-standing open (source 44.5 s — both leaves open, closer visible on the right leaf). Freeze. A red outline
-is drawn around the door **in the edit** (these are the raw frames, before any boxes; in the product
-overlay the same door is red now — the checklist fails it, `fd_selfclose = issue`).
+standing open (source 44.5 s — both leaves open, closer visible on the right leaf). Freeze, then dissolve
+from the raw frame to the same frame of `overlay.mp4`: the product's own red box `fire door · issue`
+appears (the checklist fails it, `fd_selfclose = issue`). No box is drawn in the edit.
 
 > This fire door should be shut. Propped open, it lets smoke into the corridor.
 > In Korea, building owners and managers are required by law to inspect their own fire equipment.
