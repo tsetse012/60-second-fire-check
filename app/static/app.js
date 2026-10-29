@@ -8,7 +8,7 @@ const STAGES = [
   ["sam", "Tracking objects with SAM 3.1", "one request per generic concept, four in parallel"],
   ["classify", "Labeling each track with Muse Spark", "one crop per tracked object"],
   ["inspect", "Inspection agent checking the rules", "the agent re-opens the footage with tools"],
-  ["overlay", "Rendering overlay video", "boxes coloured by label · people blurred"],
+  ["overlay", "Rendering overlay video", "boxes coloured by the checklist · people blurred"],
 ];
 
 const STATUS = {

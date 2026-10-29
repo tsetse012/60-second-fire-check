@@ -13,8 +13,8 @@ Timing is the cut; word counts are the budget for each block.
 
 **Screen:** phone footage walking a corridor, real speed. At 0:12 the walk reaches the white fire door
 standing open (source 44.5 s — both leaves open, closer visible on the right leaf). Freeze. A red outline
-is drawn around the door **in the edit** (the product overlay colours by object type, so this door is
-green there — never call a green box a violation on screen).
+is drawn around the door **in the edit** (these are the raw frames, before any boxes; in the product
+overlay the same door is red now — the checklist fails it, `fd_selfclose = issue`).
 
 > This fire door should be shut. Propped open, it lets smoke into the corridor.
 > In Korea, building owners and managers are required by law to inspect their own fire equipment.
@@ -117,9 +117,10 @@ email draft. Then the "not seen" rows.
 
 ## Open points
 
-- **Product mismatch to fix before recording:** the overlay colours boxes by object type, so the open fire
-  door that the checklist marks as an issue is drawn green, while the legend under the video says
-  "red: problem". Either colour a track red when the report cites it as an issue, or change the legend.
+- ~~Product mismatch to fix before recording~~ **fixed 2026-10-29:** the overlay colour now follows the
+  filed checklist (`report.json` `evidence_track_ids` → red for `issue`, amber for `needs_human_check`,
+  else the stage-2 label), so the open door is red and the legend under the video matches
+  (`pipeline/run_all.py` `load_verdicts`).
 - Live upload for section 2: a ~60 s cut with no people keeps the run near 6–7 minutes and ≈ $1.5–2.
   The public server's CPU is slower than this Mac — time one run there before recording.
 - Section 4: "two object names" = `fire hose cabinet`, `standing sign` — on screen, not in voice.

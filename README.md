@@ -32,14 +32,15 @@ uv run pipeline/run_all.py data/clip.mp4 --fps 10 --max-cost 4            # full
 Preprocessing (H.264, long side 1920, 10 fps, up to 3 minutes) is the one timeline every later stage
 indexes: SAM frame numbers, the crops the agent re-cuts and `overlay.mp4` all line up, so a report
 timestamp seeks to the same second in the overlay. Artefacts land in `runs/<id>/` — the stage 1–3
-outputs plus `overlay.mp4` (boxes coloured by label: green fire equipment, red issue, amber needs a
-person, grey not fire equipment; people are blurred and never labelled) and `job.json` (per-stage
-status, timing, cost estimate, log).
+outputs plus `overlay.mp4` (boxes coloured by the checklist — red an item it failed, amber needs a
+person, green fire equipment with nothing against it, grey not fire equipment or too unclear to check;
+a track no checklist item cites falls back to its label's colour; people are blurred and never
+labelled) and `job.json` (per-stage status, timing, cost estimate, log).
 
 Redrawing an overlay that was skipped, or drawn by an older renderer, needs no model call:
 
 ```bash
-uv run pipeline/run_all.py --overlay-only --run runs/<id>   # SAM text + classified.json -> overlay.mp4
+uv run pipeline/run_all.py --overlay-only --run runs/<id>   # SAM text + classified.json + report.json -> overlay.mp4
 ```
 
 ### Public mode (hackathon review link)

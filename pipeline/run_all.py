@@ -10,7 +10,7 @@ Wraps the three existing stages behind a single call:
       -> SAM 3.1 tracking      (gate/sam_video_gate.py, concepts in parallel)
       -> track labelling       (pipeline/classify_tracks.py, `person` removed)
       -> inspection agent      (pipeline/inspect_agent.py)
-      -> overlay.mp4           (boxes coloured by label, people blurred)
+      -> overlay.mp4           (boxes coloured by the checklist, else by label; people blurred)
 
 The preprocessed file is the one common timeline: SAM frame numbers, the crops
 the agent re-cuts and the overlay all index into `input.mp4`, so a report
@@ -20,8 +20,9 @@ timestamp maps to the same second in the video the demo plays.
     uv run pipeline/run_all.py clip.mov --fps 10 --max-cost 3 --lang en
 
 A finished run can be redrawn without touching a model: `--overlay-only --run
-runs/<id>` rebuilds overlay.mp4 from the SAM text files, classified.json and the
-frames already on disk, and points job.json's artifacts.overlay at the file.
+runs/<id>` rebuilds overlay.mp4 from the SAM text files, classified.json,
+report.json and the frames already on disk, and points job.json's artifacts.overlay
+at the file.
 
 `runs/<id>/job.json` carries per-stage status, timings, the cost estimate and a
 running log of what happened — that file is what `app/server.py` streams to the
@@ -81,7 +82,10 @@ DEFAULT_WINDOW_S = 10.0  # SAM 3.1 video tracks at most 16 unique objects per *r
 WINDOW_IOU = 0.3  # last frame of window k vs first frame of window k+1 — same object?
 PRICE_PER_1K_FRAMES = stage1.PRICE_PER_1K_FRAMES
 
-# overlay colours: fire equipment green, violations red, check-by-hand amber, rest grey
+# overlay colours: an item the checklist failed is red, needs-a-person amber, fire
+# equipment the checklist passed green, everything else grey. The checklist wins over
+# the stage-2 label: an open fire door is labelled `fire_door` (green) yet is the one
+# issue in IMG_2559, so the report's verdicts are read first (load_verdicts).
 COLOR_FIRE = (26, 140, 78)
 COLOR_ISSUE = (200, 46, 38)
 COLOR_CHECK = (206, 130, 22)
@@ -581,6 +585,57 @@ def load_styles(run_dir: Path) -> tuple[dict[str, tuple], dict[str, str]]:
     return styles, merged
 
 
+def resolve_merged(track_id: str, merged: dict[str, str]) -> str:
+    """Follow `merged_into` to the track that is actually drawn (cycle-safe)."""
+    seen: set[str] = set()
+    while track_id in merged and track_id not in seen:
+        seen.add(track_id)
+        track_id = merged[track_id]
+    return track_id
+
+
+def load_verdicts(run_dir: Path, merged: dict[str, str]) -> dict[str, str]:
+    """track id -> `issue` / `needs_human_check`, from the checklist that was filed.
+
+    `report.json`'s items carry `evidence_track_ids` — the only place an item is tied
+    to a track, so it is the only thing read here; an item with no evidence (absence,
+    not_checkable) recolours nothing, because guessing a track from its timestamp would
+    put a verdict on whatever happened to be on screen then. A track cited by several
+    items keeps the worse status: `issue` beats `needs_human_check`.
+
+    The verdict is applied to the whole track, not just the cited second: the open door
+    in IMG_2559 is tracked from 24 s while the checklist cites 45 s, and a box that is
+    green until it turns red would tell the viewer nothing about the object.
+    """
+    path = run_dir / "report.json"
+    verdicts: dict[str, str] = {}
+    if not path.exists():  # inspect failed or never ran: keep the label colours
+        return verdicts
+    try:
+        items = json.loads(path.read_text()).get("items") or []
+    except json.JSONDecodeError:
+        return verdicts
+    for item in items:
+        status = item.get("status")
+        if status not in {"issue", "needs_human_check"}:
+            continue
+        for track_id in item.get("evidence_track_ids") or []:
+            track_id = resolve_merged(track_id, merged)
+            if verdicts.get(track_id) != "issue":  # issue is never downgraded
+                verdicts[track_id] = status
+    return verdicts
+
+
+def apply_verdicts(styles: dict[str, tuple], verdicts: dict[str, str]) -> None:
+    """Recolour the objects the checklist ruled on, in place."""
+    for track_id, status in verdicts.items():
+        _, name = styles.get(track_id) or (COLOR_OTHER, "unclassified")
+        if status == "issue":
+            styles[track_id] = (COLOR_ISSUE, f"{name} · issue")
+        else:
+            styles[track_id] = (COLOR_CHECK, f"{name} · check")
+
+
 def overlay_font(size: int = 26) -> ImageFont.ImageFont:
     for path in ("/System/Library/Fonts/Supplemental/Arial Bold.ttf",
                  "/System/Library/Fonts/Helvetica.ttc",
@@ -642,9 +697,20 @@ def draw_track(draw: ImageDraw.ImageDraw, im: Image.Image, rec: dict, text: str,
 
 
 def render_overlay(job: Job, run_dir: Path, video: Path, fps: float) -> dict:
-    """Draw every track on every frame; people get a blur instead of a box."""
+    """Draw every track on every frame; people get a blur instead of a box.
+
+    The caller runs this after `inspect` (and `--overlay-only` on a finished run), so
+    `report.json` is usually there and its verdicts decide the colour; when it is not,
+    the stage-2 label alone decides, exactly as before.
+    """
     idx = stage3.frame_index(run_dir)  # track id -> {frame: {box, wh}}, read from the SAM text
     styles, merged = load_styles(run_dir)
+    verdicts = load_verdicts(run_dir, merged)
+    apply_verdicts(styles, verdicts)
+    if verdicts:
+        job.log("overlay", "info",
+                f"{len(verdicts)} track(s) coloured by the checklist: "
+                + ", ".join(f"{tid} {status}" for tid, status in sorted(verdicts.items())))
     out = run_dir / "overlay.mp4"
     with tempfile.TemporaryDirectory(prefix="overlay-") as tmp_name:
         tmp = Path(tmp_name)
@@ -961,8 +1027,8 @@ def main() -> None:
     ap.add_argument("--dry-run", action="store_true",
                     help="preprocess + cost estimate only, no API call")
     ap.add_argument("--overlay-only", action="store_true",
-                    help="with --run: redraw overlay.mp4 from that run's saved tracks and labels "
-                         "(no model call, no cost) and point job.json at the file")
+                    help="with --run: redraw overlay.mp4 from that run's saved tracks, labels "
+                         "and report (no model call, no cost) and point job.json at the file")
     args = ap.parse_args()
 
     if args.overlay_only:
