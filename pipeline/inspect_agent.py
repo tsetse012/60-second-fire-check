@@ -48,6 +48,7 @@ import json
 import os
 import sys
 import tempfile
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -310,8 +311,11 @@ class Inspector:
             rec = frames[pick]
             # Two passes run at the same time and share agent_frames/ (same track,
             # same frame -> same pixels), so write aside and rename: a reader in
-            # the other pass never sees a half-written JPEG.
-            staged_crop, staged_ctx = Path(tmp) / "crop.jpg", Path(tmp) / "ctx.jpg"
+            # the other pass never sees a half-written JPEG. Stage next to the target:
+            # os.replace cannot cross filesystems (runs/ is a Docker volume, /tmp is not).
+            stage = f".{os.getpid()}.{threading.get_ident()}"
+            staged_crop = crop.with_name(crop.name + stage)
+            staged_ctx = ctx.with_name(ctx.name + stage)
             save_crop(im, rec["box"], rec["wh"], staged_crop)
             save_context(im.copy(), rec["box"], rec["wh"], staged_ctx, f"{tid} frame {pick}")
             os.replace(staged_crop, crop)
