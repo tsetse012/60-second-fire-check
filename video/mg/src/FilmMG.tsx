@@ -44,38 +44,99 @@ export const PanelFrame: React.FC<{children: React.ReactNode; label: string}> = 
   );
 };
 
-// End of TRACK: the 144.9 s walk splits into 10-second windows, then stitches back into one green bar.
+// One label that lands on a beat, holds, then lifts away for the next one.
+const WinLabel: React.FC<{at: number; until: number; text: string}> = ({at, until, text}) => {
+  const frame = useCurrentFrame();
+  const {fps} = useVideoConfig();
+  const pop = spring({frame: frame - at, fps, config: {damping: 15, stiffness: 200, mass: 0.7}});
+  const out = interpolate(frame, [until, until + 4], [0, 1], {...clamp, easing: Easing.in(Easing.cubic)});
+  return (
+    <div style={{position: 'absolute', left: 0, right: 0, top: 370, textAlign: 'center', fontSize: 82, fontWeight: 800,
+      color: INK, letterSpacing: -2.5, opacity: Math.min(1, pop * 1.6) * (1 - out),
+      transform: `translateY(${26 * (1 - pop) - 22 * out}px)`}}>{text}</div>
+  );
+};
+
+// End of TRACK: 15 real frames of the walk on top, and the 144.9 s timeline under them splitting into 10-second
+// windows — each window gets a green detection box, matching boxes are joined across every seam, then it is one bar.
+const WIN_N = 15;
+const WIN_TOTAL = 144.9;
+const BAR_W = 1760;
+const BAR_H = 92;
+const OBJ_W = 26;
+const OBJ_H = 40;
+
 export const Windows: React.FC = () => {
   const frame = useCurrentFrame();
-  const total = 144.9, W = 1600;
-  const n = Math.ceil(total / 10);
+  const {fps} = useVideoConfig();
   const draw = interpolate(frame, [0, 12], [0, 1], {...clamp, easing: Easing.out(Easing.cubic)});
-  const split = interpolate(frame, [14, 34], [0, 1], {...clamp, easing: Easing.out(Easing.back(1.4))})
-    - interpolate(frame, [58, 76], [0, 1], {...clamp, easing: Easing.inOut(Easing.cubic)});
-  const green = interpolate(frame, [70, 80], [0, 1], clamp);
-  const gap = 18 * split;
-  const usable = W - gap * (n - 1);
+  const split = interpolate(frame, [12, 24], [0, 1], {...clamp, easing: Easing.out(Easing.back(1.1))});
+  const boxes = interpolate(frame, [24, 34], [0, 1], clamp);
+  const bridge = interpolate(frame, [34, 44], [0, 1], {...clamp, easing: Easing.inOut(Easing.cubic)});
+  const join = interpolate(frame, [44, 50], [0, 1], {...clamp, easing: Easing.inOut(Easing.cubic)});
+  const green = interpolate(frame, [38, 46], [0, 1], clamp);
+  const gap = 14 * split * (1 - join);
+  const usable = BAR_W - gap * (WIN_N - 1);
   let x = 0;
-  const segs = Array.from({length: n}, (_, i) => {
-    const len = Math.min(10, total - i * 10);
-    const sw = (usable * len) / total;
+  const segs = Array.from({length: WIN_N}, (_, i) => {
+    const len = Math.min(10, WIN_TOTAL - i * 10);
+    const sw = (usable * len) / WIN_TOTAL;
     const seg = {x, sw, i};
     x += sw + gap;
     return seg;
   });
-  const lift = (i: number) => 26 * split * (i % 2 ? 1 : -1);
+  const barColor = `color-mix(in srgb, ${GREEN} ${green * 100}%, ${INK})`;
+  // The same object sits on both sides of a seam; its height drifts a little from seam to seam.
+  const seamY = (k: number) => BAR_H / 2 + 16 * Math.sin(k * 1.9);
   return (
-    <AbsoluteFill style={{background: PAPER, fontFamily, justifyContent: 'center', alignItems: 'center'}}>
-      <div style={{position: 'relative', width: W, height: 40, clipPath: `inset(-200px ${100 - draw * 100}% -200px 0)`}}>
-        {segs.map(({x, sw, i}) => (
-          <div key={i} style={{position: 'absolute', left: x, top: lift(i), width: sw, height: 40, borderRadius: 6,
-            background: green > 0 ? `color-mix(in srgb, ${GREEN} ${green * 100}%, ${INK})` : INK,
-            outline: split > 0.05 ? `3px solid ${GREEN}` : 'none', outlineOffset: 4}} />
-        ))}
-        <div style={{position: 'absolute', left: 0, top: 80, fontSize: 34, fontWeight: 600, color: GREY}}>0 s</div>
-        <div style={{position: 'absolute', right: 0, top: 80, fontSize: 34, fontWeight: 600, color: GREY}}>144.9 s</div>
-        <div style={{position: 'absolute', left: segs[0].x, top: -110, fontSize: 40, fontWeight: 800, color: GREEN,
-          opacity: Math.max(0, split)}}>10 s</div>
+    <AbsoluteFill style={{background: PAPER, fontFamily}}>
+      <div style={{position: 'absolute', left: 80, top: 300, width: BAR_W, height: 471}}>
+        {/* the walk's real frames, one per window */}
+        {segs.map(({x, sw, i}) => {
+          const pop = spring({frame: frame - 2 - i * 1.5, fps, config: {damping: 15, stiffness: 200}});
+          return (
+            <div key={`t${i}`} style={{position: 'absolute', left: x, top: 0, width: sw, height: 185,
+              borderRadius: 8, overflow: 'hidden', background: '#ececee', opacity: Math.min(1, pop * 1.6),
+              transform: `translateY(${18 * (1 - pop)}px)`}}>
+              <Img src={staticFile(`windows/w${String(i).padStart(2, '0')}.jpg`)}
+                style={{width: '100%', height: '100%', objectFit: 'cover'}} />
+            </div>
+          );
+        })}
+        {/* the timeline bar */}
+        <div style={{position: 'absolute', left: 0, top: 205, width: BAR_W, height: BAR_H,
+          clipPath: `inset(-200px ${100 - draw * 100}% -200px 0)`}}>
+          {segs.map(({x, sw, i}) => (
+            <div key={i} style={{position: 'absolute', left: x, top: 0, width: sw, height: BAR_H,
+              borderRadius: 8 * split * (1 - join),
+              background: barColor, outline: split > 0.02 ? `4px solid ${GREEN}` : 'none', outlineOffset: 0,
+              boxShadow: `inset 0 0 0 4px rgba(255,255,255,${0.18 * boxes * (1 - join)})`}} />
+          ))}
+          {/* the object, boxed in both windows either side of a seam, then joined by a green line */}
+          {boxes > 0 && segs.slice(0, -1).map(({x, sw}, k) => {
+            const y = seamY(k) - OBJ_H / 2;
+            const a = Math.min(1, boxes) * (1 - join);
+            if (a <= 0) return null;
+            return (
+              <React.Fragment key={`o${k}`}>
+                <div style={{position: 'absolute', left: x + sw - OBJ_W - 8, top: y, width: OBJ_W, height: OBJ_H,
+                  border: `4px solid ${GREEN}`, borderRadius: 5, background: 'rgba(255,255,255,.14)', opacity: a}} />
+                <div style={{position: 'absolute', left: x + sw + gap + 8, top: y, width: OBJ_W, height: OBJ_H,
+                  border: `4px solid ${GREEN}`, borderRadius: 5, background: 'rgba(255,255,255,.14)', opacity: a}} />
+                <div style={{position: 'absolute', left: x + sw - 4, top: seamY(k) - 2.5,
+                  width: gap + OBJ_W + 24, height: 5, background: GREEN, borderRadius: 3,
+                  transform: `scaleX(${bridge})`, transformOrigin: 'left center', opacity: a * (1 - join)}} />
+              </React.Fragment>
+            );
+          })}
+        </div>
+        <div style={{position: 'absolute', left: 0, top: 318, fontFamily: MONO, fontSize: 32, fontWeight: 600,
+          color: GREY}}>0 s</div>
+        <div style={{position: 'absolute', right: 0, top: 318, fontFamily: MONO, fontSize: 32, fontWeight: 600,
+          color: GREY}}>144.9 s</div>
+        <WinLabel at={0} until={20} text="16 objects per request" />
+        <WinLabel at={24} until={42} text="10-second windows" />
+        <WinLabel at={46} until={200} text="stitched" />
       </div>
     </AbsoluteFill>
   );
@@ -155,33 +216,59 @@ const Lane: React.FC<{title: string; start: number; width: number}> = ({title, s
 
 // INSPECT: tool calls fire as code chips -> two independent checks run side by side -> they merge into one
 // 17-row checklist -> the door crop is asked "Open?" twice -> OPEN.
+// Tool-call chips: two or three fire into the middle at once, then shrink and stack upwards as the next ones land.
+// Type never drops below 34 px (40 px at 0.85), so every call stays legible.
+const CHIP_H = 80;
+const CHIP_FONT = 40;
+const CHIP_GAP = 6;
+const CHIP_BASE_Y = 940;
+
 export const Inspect: React.FC<{chipAt: (i: number) => number}> = ({chipAt}) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
-  const chipsOut = interpolate(frame, [168, 184], [0, 1], clamp);
-  const lanesIn = interpolate(frame, [186, 204], [0, 1], {...clamp, easing: Easing.out(Easing.cubic)});
+  const chipsOut = interpolate(frame, [140, 156], [0, 1], clamp);
+  const lanesIn = interpolate(frame, [152, 174], [0, 1], {...clamp, easing: Easing.out(Easing.cubic)});
   const merge = interpolate(frame, [340, 372], [0, 1], {...clamp, easing: Easing.inOut(Easing.cubic)});
   const listOut = interpolate(frame, [440, 456], [0, 1], clamp);
   const doorIn = spring({frame: frame - 452, fps, config: {damping: 15, stiffness: 160}});
   const open = spring({frame: frame - 532, fps, config: {damping: 9, stiffness: 260}});
   const asks = [482, 506];
+  const chips = data.tools.map((t, i) => {
+    const age = frame - chipAt(i);
+    const entry = spring({frame: age, fps, config: {damping: 12, stiffness: 210, mass: 0.7}});
+    const shrink = interpolate(age, [14, 44], [0, 1], clamp);
+    return {t, i, on: age >= 0, entry,
+      scale: (1 + 0.45 * (1 - entry)) * (1 - 0.15 * shrink), y: CHIP_BASE_Y, fade: 1};
+  });
+  const shown = chips.filter((c) => c.on);
+  let acc = 0;
+  for (const c of [...shown].reverse()) {
+    c.y = CHIP_BASE_Y - acc;
+    acc += CHIP_H * c.scale + CHIP_GAP;
+    // Older calls keep sliding up and out of the frame instead of piling into the top edge.
+    c.fade = interpolate(c.y - (CHIP_H * c.scale) / 2, [150, 260], [0, 1], clamp);
+  }
   return (
     <AbsoluteFill style={{background: PAPER, fontFamily}}>
       {/* A — tool calls */}
       {chipsOut < 1 && (
-        <AbsoluteFill style={{justifyContent: 'center', alignItems: 'center', opacity: 1 - chipsOut,
-          transform: `translateY(${-80 * chipsOut}px)`}}>
-          <div style={{width: 1640, display: 'flex', flexWrap: 'wrap', gap: 22, justifyContent: 'center'}}>
-            {data.tools.map((t, i) => {
-              const s = spring({frame: frame - chipAt(i), fps, config: {damping: 13, stiffness: 240, mass: 0.6}});
-              return (
-                <span key={i} style={{fontFamily: MONO, fontSize: 32, color: INK, background: '#f2f2f4',
-                  border: `2px solid ${t.startsWith('submit') ? GREEN : '#dcdce0'}`, padding: '12px 20px', borderRadius: 12,
-                  opacity: frame < chipAt(i) ? 0 : Math.min(1, s * 1.5),
-                  transform: `translateX(${600 * (1 - s)}px) scale(${0.7 + 0.3 * s})`}}>{t}</span>
-              );
-            })}
-          </div>
+        <AbsoluteFill style={{opacity: 1 - chipsOut, transform: `translateY(${-60 * chipsOut}px)`}}>
+          {shown.map(({t, i, entry, scale, y, fade}) => {
+            const submit = t.startsWith('submit');
+            return (
+              <span key={i} style={{position: 'absolute', left: 960, top: y - CHIP_H / 2, height: CHIP_H,
+                display: 'inline-flex', alignItems: 'center', gap: 18, padding: '0 30px', borderRadius: 16,
+                fontFamily: MONO, fontSize: CHIP_FONT, fontWeight: 600, whiteSpace: 'nowrap',
+                color: submit ? PAPER : INK, background: submit ? GREEN : '#f2f2f4',
+                border: `2px solid ${submit ? GREEN : '#dedee3'}`,
+                boxShadow: `0 ${10 * Math.min(1, entry)}px ${26 * Math.min(1, entry)}px rgba(0,0,0,${0.1 * Math.min(1, entry)})`,
+                opacity: Math.min(1, entry * 2) * fade,
+                transform: `translateX(-50%) scale(${scale})`, transformOrigin: 'center center'}}>
+                <span style={{width: 15, height: 15, borderRadius: 8, background: submit ? PAPER : GREEN}} />
+                {t}
+              </span>
+            );
+          })}
         </AbsoluteFill>
       )}
       {/* B/C — two lanes, then one checklist */}
@@ -189,10 +276,10 @@ export const Inspect: React.FC<{chipAt: (i: number) => number}> = ({chipAt}) => 
         <AbsoluteFill style={{justifyContent: 'center', alignItems: 'center', opacity: lanesIn * (1 - listOut),
           transform: 'scale(1.3)'}}>
           <div style={{position: 'absolute', transform: `translateX(${-330 * (1 - merge)}px)`}}>
-            <Lane title={merge > 0.5 ? 'check 1 + check 2' : 'check 1'} start={200} width={600} />
+            <Lane title={merge > 0.5 ? 'check 1 + check 2' : 'check 1'} start={166} width={600} />
           </div>
           <div style={{position: 'absolute', transform: `translateX(${330 * (1 - merge)}px)`, opacity: 1 - merge}}>
-            <Lane title="check 2" start={212} width={600} />
+            <Lane title="check 2" start={178} width={600} />
           </div>
         </AbsoluteFill>
       )}
@@ -229,22 +316,38 @@ export const Inspect: React.FC<{chipAt: (i: number) => number}> = ({chipAt}) => 
   );
 };
 
-// The real email draft, first lines typing onto a card.
-export const EmailCard: React.FC<{cps: number}> = ({cps}) => {
+// The real email draft. The subject lands at once; the greeting and the lead-in fade in together; items 1 and 2
+// (up to the first sentence of item 2) type out inside the first 7 seconds. Text is data.json's, cut not edited.
+export const EmailCard: React.FC = () => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
-  const text = data.email.split('\n').slice(0, 5).join('\n');
-  const n = Math.max(0, Math.floor((frame - 10) * cps));
-  const shown = text.slice(0, n);
+  const lines = data.email.split('\n');
+  const item2 = lines[7].split('beside shopfront.')[0] + 'beside shopfront.';
+  const typed1 = Math.min(lines[6].length, Math.max(0, Math.floor((frame - 10) * 4.0)));
+  const typed2 = Math.min(item2.length, Math.max(0, Math.floor((frame - 58) * 4.2)));
+  const head = interpolate(frame, [6, 14], [0, 1], clamp);
   const pop = spring({frame, fps, config: {damping: 15, stiffness: 180}});
+  const rows: {text: string; bold?: boolean; fade?: number; typed?: boolean}[] = [
+    {text: lines[0], bold: true},
+    {text: ''},
+    {text: lines[2], fade: head},
+    {text: ''},
+    {text: lines[4], fade: head},
+    {text: ''},
+    {text: lines[6].slice(0, typed1), typed: true},
+    {text: ''},
+    {text: item2.slice(0, typed2), typed: true},
+  ];
+  const typing = typed1 < lines[6].length ? 6 : typed2 < item2.length ? 8 : -1;
   return (
     <AbsoluteFill style={{background: '#f4f4f5', justifyContent: 'center', alignItems: 'center', fontFamily}}>
-      <div style={{width: 1400, minHeight: 600, background: PAPER, borderRadius: 28, padding: '56px 72px',
+      <div style={{width: 1600, background: PAPER, borderRadius: 28, padding: '54px 76px',
         boxShadow: '0 30px 90px rgba(0,0,0,.12)', transform: `translateY(${80 * (1 - pop)}px)`, opacity: pop}}>
-        <div style={{fontSize: 40, lineHeight: 1.45, color: INK, whiteSpace: 'pre-wrap', fontWeight: 400}}>
-          {shown.split('\n').map((l, i) => (
-            <div key={i} style={{fontWeight: i === 0 ? 800 : 400, minHeight: i === 1 || i === 3 ? 22 : undefined}}>
-              {l}{i === shown.split('\n').length - 1 && n < text.length && frame % 12 < 7 ? '▍' : ''}</div>
+        <div style={{fontSize: 34, lineHeight: 1.4, color: INK, whiteSpace: 'pre-wrap', fontWeight: 400}}>
+          {rows.map((r, i) => (
+            <div key={i} style={{fontWeight: r.bold ? 800 : 400, opacity: r.fade ?? 1,
+              minHeight: r.text === '' ? 48 : undefined}}>
+              {r.text}{i === typing && frame % 12 < 7 ? '▍' : ''}</div>
           ))}
         </div>
       </div>

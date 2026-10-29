@@ -64,15 +64,15 @@ const TRACK_CUTS: [number, number, number, number, number][] = [
 ];
 const TRACK_AT = 1128;
 
-// Result page, fast: tiles -> checklist -> timestamp chip click -> the video jumps to the door.
+// Result page, fast punch-ins on what matters: stat tiles -> issue rows -> the 45 s chip -> the video.
 const TOUR_CUTS: [number, number, number, number, number][] = [
-  [2.2, 30, 620, 300, 1.8], [3.3, 41, 1280, 420, 1.6], [5.2, 38, 1000, 400, 1.5], [6.6, 83, 673, 360, 1.8],
+  [2.2, 30, 622, 128, 2.35], [3.3, 41, 1240, 300, 2.0], [5.2, 38, 1180, 356, 2.2], [6.6, 83, 672, 350, 2.35],
 ];
 const TOUR_AT = 2760;
 const CHIP_CLICK = 22; // frames into cut 3 (source 6.1 s)
 
 const NAME_CHIP = (i: number) => 70 + i * 16;
-const TOOL_CHIP = (i: number) => 8 + i * 10;
+const TOOL_CHIP = (i: number) => 2 + Math.floor(i / 3) * 24 + (i % 3) * 5;
 
 const Stamp: React.FC = () => {
   const frame = useCurrentFrame();
@@ -187,7 +187,7 @@ export const Film: React.FC = () => {
           </Sequence>
         );
       })}
-      <Sequence from={2952} durationInFrames={168}><EmailCard cps={1.75} /></Sequence>
+      <Sequence from={2952} durationInFrames={168}><EmailCard /></Sequence>
       <Sequence from={3120} durationInFrames={192}><Count /></Sequence>
       <Sequence from={3312} durationInFrames={144}><Gen n={5} vol={0.6} /></Sequence>
       <Sequence from={3456} durationInFrames={144}><Morning /></Sequence>
