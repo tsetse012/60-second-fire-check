@@ -9,3 +9,8 @@ runs/
 .claude/
 __pycache__/
 .DS_Store
+
+# video production media (stills, renders, music) stay local
+video/work/
+node_modules/
+video/mg/public/

@@ -170,11 +170,13 @@ class Job:
         self.save()
 
     def save(self) -> None:
+        # Both inspection passes save from their own threads: the write and the swap stay
+        # under the lock, or one thread renames the shared .tmp away under the other.
         with self.lock:
             payload = json.dumps(self.data, indent=2, ensure_ascii=False)
-        tmp = self.path.with_suffix(".json.tmp")
-        tmp.write_text(payload)
-        tmp.replace(self.path)
+            tmp = self.path.with_suffix(".json.tmp")
+            tmp.write_text(payload)
+            tmp.replace(self.path)
 
     def stage(self, name: str, status: str | None = None, detail: str | None = None) -> None:
         with self.lock:
