@@ -1,11 +1,11 @@
 # 60-Second Fire Check
 
-Walk a building corridor with your phone. Get a fire-safety self-inspection checklist back — every
-finding with a timestamp, an email for the building manager, and a list of what the video cannot settle.
+Walk a building corridor with your phone and you get a fire-safety self-inspection checklist back, with
+a timestamp on every finding, an email for the building manager and a list of what the video cannot settle.
 
 Built for the Meta Global AI Developer Hackathon 2026 (Indie Dev track · Build for Your World).
 
-**Try it: https://firecheck.getnunchi.app** — two finished inspections open instantly with no model
+**Try it: https://firecheck.getnunchi.app.** Two finished inspections open instantly with no model
 call. Uploading a new clip needs the passcode in the submission notes (each run costs real API credit).
 
 ## The problem
@@ -25,19 +25,21 @@ kind that come and go between visits.
    second it happened; the video with every tracked object boxed and coloured by the verdict; a draft
    email to the building manager; and the items video cannot judge, marked "verify on site".
 
-Absence is never reported as proof: an item that was not seen is "not seen in this walk".
+If an item was not seen, the report says "not seen in this walk" and does not treat that as proof it is
+missing.
 
 ## How Meta's models are used
 
 | step | model | job |
 |---|---|---|
-| Track | **SAM 3.1** (video) | Follows doors, red boxes, signs, extinguishers, hose cabinets, standing signs, carts… through the whole walk and keeps one ID per object while it is on screen. SAM takes one concept per request and at most 16 unique objects per request, so the walk is cut into 10-second windows and the tracks are stitched at the seams. A `person` concept drives the blur — people are never labelled. |
+| Track | **SAM 3.1** (video) | Follows doors, red boxes, signs, extinguishers, hose cabinets, standing signs, carts… through the whole walk and keeps one ID per object while it is on screen. SAM takes one concept per request and at most 16 unique objects per request, so the walk is cut into 10-second windows and the tracks are stitched at the seams. A `person` concept is used to blur people; they are never labelled. |
 | Label | **Muse Spark 1.3** | Looks at each track in the frame where the object is fully in view and names it from eleven categories (fire extinguisher, hose cabinet, fire door, exit sign, emergency light, smoke detector, sprinkler head, alarm device, corridor obstruction, not fire equipment, unclear) with a condition and one sentence of evidence, as JSON-schema output. |
-| Measure | **Muse Spark 1.3** | Asks one question per fire door — open or closed? — twice, independently. Agreeing answers become a fact the inspector must respect. |
+| Measure | **Muse Spark 1.3** | Asks the same open-or-closed question about each fire door twice, independently. Agreeing answers become a fact the inspector must respect. |
 | Inspect | **Muse Spark 1.3** (tool use) | An agent with `list_tracks`, `view_track`, `get_rule`, `submit_report` works through the ruleset. A pass or fail on a track it never re-opened is sent back. Two independent passes run; where they disagree, the item goes to a person. |
 
-SAM is good at "a door", not at "a fire door" (day-1 gate, `gate/RESULTS.md`); Muse Spark is good at
-deciding what a crop is, not at following it for two minutes. Each does the half the other cannot.
+Why two models: in the day-1 gate SAM returned tracks for "door" but no matches for the "fire door"
+concept (`gate/RESULTS.md`), and Muse Spark can say what a crop shows but does not follow an object
+through two minutes of video.
 
 ## Measured against a person
 
@@ -53,17 +55,17 @@ output (`eval/IMG_2559.groundtruth.json`), then compared.
 | obstruction (A-frame sign) | 2 | 0 | 2 |
 | **total** | **18** | **9 (50 %)** | **14 (78 %)** |
 
-Three changes made the difference: picking the frame where the object is whole instead of the biggest
+Three changes took it from 9 to 14: picking the frame where the object is whole instead of the biggest
 box, adding two concept names (`fire hose cabinet`, `standing sign`), and counting free-standing signs as
-obstructions. Of the four still missed, three are closed fire doors whose top — where the closer sits —
-never enters the footage, and one is a hose cabinet at the far end of a corridor. Those are filming limits:
-keep each door whole in frame once. Details: `gate/RESULTS.md`.
+obstructions. Of the four still missed, three are closed fire doors whose top, where the closer sits,
+never enters the footage, and one is a hose cabinet at the far end of a corridor. Those are filming limits; when
+filming, keep each door whole in frame at least once. Details: `gate/RESULTS.md`.
 
 ## Limits
 
-- One building, one walk measured. The number is a first measurement, not a benchmark.
-- Track counts are not unit counts: the same extinguisher can come back as two tracks (13 tracks for 7
-  extinguishers in the measured walk). The checklist judges items, not totals.
+- Only one walk in one building has been measured. 78 % is a first measurement, not a benchmark.
+- The same extinguisher can come back as more than one track (13 tracks for 7 extinguishers in the
+  measured walk), so track totals can overcount equipment. The checklist judges each item instead.
 - `rulesets/nfpa.json` is drafted but its clause numbers are unverified and it has not been run.
 - Video cannot test a lamp, a gauge or a cabinet's contents; those items say "verify on site".
 
