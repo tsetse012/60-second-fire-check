@@ -74,7 +74,12 @@ def env_flag(name: str) -> bool:
 
 
 PUBLIC = env_flag("FIRECHECK_PUBLIC")
-SHOWCASE = [r.strip() for r in os.environ.get("FIRECHECK_SHOWCASE", "").split(",") if r.strip()]
+# "run_id=Card label,run_id2=…" — the label is optional; without it the card uses the clip name
+SHOWCASE_LABELS = dict(
+    (part.split("=", 1) + [""])[:2] for part in
+    (r.strip() for r in os.environ.get("FIRECHECK_SHOWCASE", "").split(",")) if part)
+SHOWCASE_LABELS = {k.strip(): v.strip() for k, v in SHOWCASE_LABELS.items()}
+SHOWCASE = list(SHOWCASE_LABELS)
 UPLOAD_PASSCODE = os.environ.get("UPLOAD_PASSCODE", "").strip()
 MAX_RUNS_PER_DAY = int(os.environ.get("MAX_RUNS_PER_DAY") or 4)
 MAX_RUNS_TOTAL = int(os.environ.get("MAX_RUNS_TOTAL") or 15)
@@ -255,7 +260,8 @@ def showcase_samples() -> list[dict]:
         fps = job.get("fps")
         seconds = round(frames / fps, 1) if frames and fps else None
         item = {"name": run_id,
-                "label": pretty(Path(str(job.get("sample") or run_id)).stem),
+                "label": SHOWCASE_LABELS.get(run_id)
+                         or pretty(Path(str(job.get("sample") or run_id)).stem),
                 "previous": run_id if job.get("status") == "done" else None,
                 "previous_at": job.get("created_at")}
         if seconds:

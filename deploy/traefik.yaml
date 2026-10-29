@@ -12,7 +12,7 @@ http:
     firecheck-http:
       rule: Host(`firecheck.getnunchi.app`)
       entryPoints:
-        - web
+        - http
       middlewares:
         - firecheck-https
       service: firecheck
@@ -20,7 +20,7 @@ http:
     firecheck-https:
       rule: Host(`firecheck.getnunchi.app`)
       entryPoints:
-        - websecure
+        - https
       service: firecheck
       tls:
         certResolver: letsencrypt

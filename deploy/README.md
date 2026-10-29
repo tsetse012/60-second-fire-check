@@ -19,7 +19,7 @@ docker run -d --name firecheck --network coolify --restart unless-stopped -p 800
   -e META_MODEL_API_KEY \
   -e FIRECHECK_PUBLIC=1 \
   -e UPLOAD_PASSCODE \
-  -e FIRECHECK_SHOWCASE=20261029-082301-IMG_2559-r2,20261028-155043-hospital-corridor-static-s8h \
+  -e FIRECHECK_SHOWCASE='20261029-082301-IMG_2559-show=Building corridor walk (phone),20261028-155043-hospital-corridor-static-show=Hospital corridor (stock clip)' \
   firecheck:latest
 ```
 
@@ -31,7 +31,7 @@ uid (the `chown` above) or uploads fail with permission errors.
 | `META_MODEL_API_KEY` | model key; without it the site loads but refuses new runs |
 | `FIRECHECK_PUBLIC=1` | turns on public mode (allowlisted `/runs`, passcode, quotas) |
 | `UPLOAD_PASSCODE` | shared passcode for the upload form; **empty = uploads off** |
-| `FIRECHECK_SHOWCASE` | comma-separated run ids that open instantly for anyone |
+| `FIRECHECK_SHOWCASE` | comma-separated `run_id=Card label` entries (label optional) that open instantly for anyone |
 | `MAX_RUNS_PER_DAY` | uploads per calendar day, Asia/Seoul (default 4) |
 | `MAX_RUNS_TOTAL` | uploads over the container's lifetime (default 15) |
 

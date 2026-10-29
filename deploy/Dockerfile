@@ -1,7 +1,7 @@
 # 60-Second Fire Check — public demo image.
 #
 #   docker build -f deploy/Dockerfile -t firecheck:latest .
-#   docker run -d --name firecheck --network coolify -p 8000:8000 \
+#   docker run -d --name firecheck --network coolify \
 #     -v /srv/firecheck/runs:/app/runs \
 #     -e META_MODEL_API_KEY -e FIRECHECK_PUBLIC=1 -e UPLOAD_PASSCODE \
 #     -e FIRECHECK_SHOWCASE=run-a,run-b firecheck:latest
