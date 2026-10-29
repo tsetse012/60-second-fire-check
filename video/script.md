@@ -36,54 +36,54 @@ in. Corner tag: `sped up`.
 
 **3a · Track (0:40–1:00).** Screen: the overlay video, boxes following doors, extinguishers, signs.
 
-> SAM 3.1 follows each object through the video and keeps one identity for it while it stays on screen.
+> SAM 3.1 follows each object through the video and keeps one ID for it while it's on screen.
 > It tracks sixteen objects per request at most, so the walk is cut into ten-second windows
-> and stitched back together at the seams.
+> and stitched at the seams.
 
 **3b · Label (1:00–1:15).** Screen: an edit graphic built from the run's real `crops/` — a grid of
 tracked objects, each with its Muse Spark label appearing (not an app screen).
 
-> SAM finds "a door" or "a red box", not "a fire door". So Muse Spark looks at each tracked object,
-> in the frame where it is fully in view, and names it.
+> In our first test, SAM found doors and red boxes, but "fire door" returned nothing. So Muse Spark
+> names each tracked object, looking at the frame where it is fully in view.
 
 **3c · Inspect (1:15–1:40).** Screen: the agent's tool-call feed — `list_tracks`, `view_track`,
 `get_rule`, `submit_report` — then the "How the agent checked" tab with its `check 1` / `check 2` chips.
 
-> Then an inspection agent works through seventeen rules from the Korean self-inspection form.
-> If it tries to pass or fail an item without opening the footage, it is sent back.
-> It runs twice, independently, and where the two runs disagree, the item goes to a person.
-> Whether a door is open is asked as a single question of its own: inside the long checklist, that
-> answer flipped.
+> An inspection agent then checks seventeen rules from the Korean self-inspection form.
+> If it passes or fails an item without opening the footage, it is sent back, up to twice, and
+> anything still unchecked is recorded.
+> It runs twice, independently, and where the runs disagree, the item goes to a person.
+> Whether a door is open is asked as a single question of its own, because inside the long checklist
+> that answer sometimes flipped.
 
 ## 4 · Measured against a person — 1:40–2:15 (≈ 80 words)
 
 **Screen:** the 18 items I counted by hand (blind, from contact sheets) on the left; the agent's matches
 filling in on the right. Big number: `9 / 18 → 14 / 18`.
 
-> I counted the same walk by hand, without looking at the results: eighteen items.
+> I counted the same walk by hand, without looking at the results, and found eighteen items.
 > The first version found nine. Picking a better frame, adding two object names, and counting
 > free-standing signs as obstructions brought it to fourteen.
 
 **Screen:** the closed fire door at 1:20–1:22 (source 79.5–82 s) — the door's top edge never enters the frame.
 
 > Three of the four it still misses are closed fire doors whose top, where the closer sits, was never in
-> the shot. That is a filming rule, not a model problem: keep the whole door in frame once.
+> the shot. The footage is the limit here. Step back and film each whole door at least once.
 
 ## 5 · What you get — 2:15–2:45 (≈ 65 words)
 
 **Screen:** the result page. Click a timestamp chip → the video jumps to that second. Scroll to the
 email draft. Then the "not seen" rows.
 
-> Every finding links to the second it happened.
-> The email tells the manager what to fix and where.
-> And the report says what video cannot settle. A smoke detector that was not seen is "not seen in this
-> walk", never "missing". If in doubt, it asks for a person on site.
+> Every finding links to the second it happened, and the email tells the manager what to fix and where.
+> The report also lists what video cannot settle. A smoke detector that was not seen is marked "not seen
+> in this walk" rather than "missing". When the agent is unsure, it asks for a person on site.
 
 ## 6 · Close — 2:45–3:00 (≈ 30 words)
 
 **Screen:** URL + GitHub link, ruleset JSON file scrolling.
 
-> Built this week on SAM 3.1 and Muse Spark. The rules are data, not code: one file, every item
+> Built this week on SAM 3.1 and Muse Spark. The rules sit in one data file, and every item in it is
 > tied to its legal source.
 > 60-Second Fire Check.
 
@@ -113,7 +113,7 @@ email draft. Then the "not seen" rows.
 | this week | first commit 2026-10-28 (`7bfba01`); recording 11/3 |
 
 | about fifteen minutes | cold run of the 145 s walk: preprocess 16 s + SAM 338 s + classify 209 s + inspect ≈200 s + overlay ≈203 s ≈ 16 min (`runs/20261029-082301-IMG_2559*/job.json`) |
-| must open footage or be sent back | `pipeline/inspect_agent.py:364-370` (after 2 rejections the gap is recorded, not hidden) |
+| sent back up to twice, unchecked remainder recorded | `pipeline/inspect_agent.py:364-370`, `:658`, `:667` (`MAX_SUBMIT_REJECTIONS=2`; report `submit_rejections`) |
 
 ## Open points
 
