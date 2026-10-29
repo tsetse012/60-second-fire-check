@@ -1,0 +1,31 @@
+# Build context = repo root. The image gets code only: no footage, no run artifacts,
+# no keys, no agent scratch files.
+.git/
+.gitignore
+.omc/
+.claude/
+.venv/
+__pycache__/
+*.pyc
+.ruff_cache/
+.DS_Store
+.env
+.env.*
+*.env
+
+# footage and anything derived from it
+data/
+runs/
+*.mp4
+*.mov
+*.MP4
+*.MOV
+*.m4v
+*.sse.jsonl
+
+# docs/CI that the image does not read (deploy/ stays: it carries requirements.txt)
+eval/
+deploy/README.md
+deploy/traefik.yaml
+deploy/pack_showcase.sh
+README.md

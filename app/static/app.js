@@ -73,9 +73,24 @@ async function api(path, options) {
     } catch (err) {
       /* not json */
     }
-    throw new Error(message);
+    const error = new Error(message);
+    error.status = res.status;
+    throw error;
   }
   return res.json();
+}
+
+/* Public mode: the server says why a run was refused — say it back in words a
+   reviewer can act on, and let the server's own 429 text through (it knows when). */
+const FRIENDLY = {
+  401: "That passcode didn't match. Use the passcode from the submission notes.",
+  403: "This public demo doesn't start new runs here — open a finished result below.",
+  413: "That video is too large — keep it under 400 MB.",
+};
+
+function uploadMessage(err) {
+  const friendly = FRIENDLY[err.status];
+  return friendly || err.message;
 }
 
 function mmss(seconds) {
@@ -109,25 +124,34 @@ async function loadSamples() {
     return;
   }
   if (!state.samples.length) {
-    list.append(h("p", "muted", "No clips in data/ — upload one above."));
+    list.append(h("p", "muted", state.health && state.health.public
+      ? "No finished runs are configured for this demo."
+      : "No clips in data/ — upload one above."));
     return;
   }
+  const isPublic = Boolean(state.health && state.health.public);
   for (const sample of state.samples) {
+    if (isPublic && !sample.previous) continue;
     const card = h("div", "sample-card");
     const info = h("div", "sample-info");
     info.append(h("span", "sample-name", sample.label));
     const bits = [];
     if (sample.seconds) bits.push(`${sample.seconds} s`);
     if (sample.width) bits.push(`${sample.width}×${sample.height}`);
-    info.append(h("span", "sample-meta", bits.join(" · ")));
+    if (bits.length) info.append(h("span", "sample-meta", bits.join(" · ")));
+    if (sample.summary) info.append(h("span", "sample-summary", sample.summary));
 
     const actions = h("div", "sample-actions");
     if (sample.previous) {
-      const open = h("button", "btn primary small", "Open previous result");
+      const open = h("button", "btn primary small",
+        isPublic ? "Open the inspection result" : "Open previous result");
       open.addEventListener("click", () => reusePrevious(sample.name));
-      const rerun = h("button", "btn ghost small", "Run again");
-      rerun.addEventListener("click", () => startSample(sample.name));
-      actions.append(open, rerun);
+      actions.append(open);
+      if (!isPublic) {
+        const rerun = h("button", "btn ghost small", "Run again");
+        rerun.addEventListener("click", () => startSample(sample.name));
+        actions.append(rerun);
+      }
     } else {
       const run = h("button", "btn primary small", "Run sample");
       run.addEventListener("click", () => startSample(sample.name));
@@ -154,7 +178,7 @@ async function reusePrevious(name) {
     state.jobId = data.job_id;
     await openResults(job);
   } catch (err) {
-    showUploadError(err.message);
+    showUploadError(uploadMessage(err));
     showView("upload");
   }
 }
@@ -171,7 +195,7 @@ async function startJob(form) {
     const data = await api("/api/jobs", { method: "POST", body: form });
     await watch(data.job_id);
   } catch (err) {
-    showUploadError(err.message);
+    showUploadError(uploadMessage(err));
     showView("upload");
   }
 }
@@ -219,6 +243,9 @@ function setupUpload() {
     if (!picked) return;
     const form = new FormData();
     form.append("file", picked, picked.name);
+    if (state.health && state.health.public) {
+      form.append("passcode", $("#passcode-input").value.trim());
+    }
     runBtn.disabled = true;
     await startJob(form);
     runBtn.disabled = false;
@@ -609,22 +636,48 @@ function setupTabs() {
   });
 }
 
+/* ---------------------------------------------------------------- public mode */
+
+function applyPublicUI() {
+  const health = state.health;
+  if (!health || !health.public) return;
+  $("#topbar-tag").textContent = "public demo · finished inspections open instantly";
+  $("#samples-title").textContent = "Finished inspections";
+  // A finished inspection is what a reviewer came for: put the cards above the form,
+  // so they are on the first screen instead of below a 232 px dropzone.
+  const samplesBox = $(".samples");
+  const form = $("#upload-form");
+  if (samplesBox && form) form.parentNode.insertBefore(samplesBox, form);
+  const uploads = Boolean(health.uploads_enabled);
+  $("#upload-form").classList.toggle("hidden", !uploads);
+  $("#upload-off").classList.toggle("hidden", uploads);
+  $("#passcode-row").classList.toggle("hidden", !uploads);
+  $("#public-note").classList.toggle("hidden", !uploads);
+  const left = health.runs_left_today;
+  $("#foot-status").textContent = uploads
+    ? `${left} upload${left === 1 ? "" : "s"} left today`
+    : "uploads off · finished inspections open instantly";
+}
+
 /* ---------------------------------------------------------------- boot */
 
 async function boot() {
   setupUpload();
   setupTabs();
   buildStages();
-  loadSamples();
 
   try {
     state.health = await api("/api/health");
+  } catch (err) {
+    state.health = null;
+  }
+  applyPublicUI();
+  if (state.health && !state.health.public) {
     $("#foot-status").textContent = state.health.key_configured
       ? "Meta API key loaded on the server"
       : "No META_MODEL_API_KEY on this server — jobs will be refused";
-  } catch (err) {
-    $("#foot-status").textContent = "";
   }
+  loadSamples();
 
   const match = location.hash.match(/^#result=([A-Za-z0-9._-]+)$/);
   if (match) {

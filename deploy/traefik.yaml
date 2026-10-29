@@ -1,0 +1,50 @@
+# Traefik dynamic config for the public demo (drop into Coolify/Traefik's
+# file provider, e.g. /traefik/dynamic/firecheck.yaml, or merge by hand).
+#
+#   firecheck.getnunchi.app  ->  http://firecheck:8000
+#
+# The container must be named `firecheck` and sit on the same Docker network as
+# Traefik (`coolify`). There is no auth middleware here on purpose: the app itself
+# asks for UPLOAD_PASSCODE before it will start a run, and everything else on the
+# site is meant to be public.
+http:
+  routers:
+    firecheck-http:
+      rule: Host(`firecheck.getnunchi.app`)
+      entryPoints:
+        - web
+      middlewares:
+        - firecheck-https
+      service: firecheck
+
+    firecheck-https:
+      rule: Host(`firecheck.getnunchi.app`)
+      entryPoints:
+        - websecure
+      service: firecheck
+      tls:
+        certResolver: letsencrypt
+
+  middlewares:
+    firecheck-https:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+  services:
+    firecheck:
+      loadBalancer:
+        servers:
+          - url: http://firecheck:8000
+
+# Upload size: Traefik does not buffer or cap request bodies by default, so a 400 MB
+# clip (the app's own MAX_UPLOAD_MB) streams straight through. Two things to check on
+# the host, both in the *static* config that Coolify owns:
+#   * entryPoints.websecure.transport.respondingTimeouts.readTimeout — a phone
+#     uploading 400 MB over LTE needs more than the 60 s default; set 0 (unlimited)
+#     or >= 15m, otherwise the upload is cut with a 408 mid-body.
+#   * if a body-size middleware (buffering.maxRequestBodyBytes) is already chained
+#     onto this entry point, its limit must be > 419430400 or the app's own 413
+#     never gets the chance to answer.
+# No buffering middleware is added here deliberately: it would spool the whole clip to
+# Traefik's disk before the app saw one byte, doubling the write load for nothing.

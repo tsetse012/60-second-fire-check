@@ -18,7 +18,7 @@
     </svg>
     <span class="name">60-Second Fire Check</span>
   </a>
-  <span class="local-tag">local demo · API key stays on this machine</span>
+  <span class="local-tag" id="topbar-tag">local demo · API key stays on this machine</span>
 </header>
 
 <main>
@@ -34,6 +34,11 @@
     </div>
 
     <form id="upload-form" class="upload-box">
+      <div id="passcode-row" class="upload-row passcode-row hidden">
+        <label class="passcode-label" for="passcode-input">Passcode from the submission notes</label>
+        <input id="passcode-input" class="passcode-input" type="password" autocomplete="off"
+               spellcheck="false" placeholder="••••••">
+      </div>
       <label id="dropzone" class="dropzone" for="file-input">
         <svg class="dz-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -48,13 +53,20 @@
         <span id="file-chosen" class="file-chosen">No file chosen</span>
         <button id="run-btn" type="submit" class="btn primary" disabled>Run inspection</button>
       </div>
+      <p id="public-note" class="public-note hidden">
+        Uploaded clips are sent to Meta’s model API. Please don’t upload footage with people in it.
+      </p>
     </form>
+
+    <div id="upload-off" class="notice hidden">
+      Uploads are off on this public demo. The finished inspections below open instantly.
+    </div>
 
     <div id="upload-error" class="alert hidden" role="alert"></div>
 
     <div class="samples">
       <div class="samples-head">
-        <h2>Try a sample</h2>
+        <h2 id="samples-title">Try a sample</h2>
         <span class="rule"></span>
       </div>
       <div id="sample-list" class="sample-grid"></div>

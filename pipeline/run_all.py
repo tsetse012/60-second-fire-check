@@ -19,6 +19,10 @@ timestamp maps to the same second in the video the demo plays.
     uv run pipeline/run_all.py data/hospital-corridor-static.mp4
     uv run pipeline/run_all.py clip.mov --fps 10 --max-cost 3 --lang en
 
+A finished run can be redrawn without touching a model: `--overlay-only --run
+runs/<id>` rebuilds overlay.mp4 from the SAM text files, classified.json and the
+frames already on disk, and points job.json's artifacts.overlay at the file.
+
 `runs/<id>/job.json` carries per-stage status, timings, the cost estimate and a
 running log of what happened — that file is what `app/server.py` streams to the
 browser, so the UI never has to parse stdout.
@@ -684,6 +688,71 @@ def render_overlay(job: Job, run_dir: Path, video: Path, fps: float) -> dict:
             "mb": out.stat().st_size / 1e6}
 
 
+def load_run(run_dir: Path) -> tuple[Job, str]:
+    """A Job wrapped around an existing run, plus the id it was written under.
+
+    The saved job.json is the source of truth: the constructor writes its defaults
+    first and they are replaced immediately, so no stage is invented for work that
+    already happened. A copied run (`cp -R` to `<run>-show`) still names the run it
+    came from in every artifact path, so those are repointed at the copy here.
+    """
+    run_dir = Path(run_dir).resolve()
+    path = run_dir / "job.json"
+    if not path.exists():
+        raise SystemExit(f"no job.json in {run_dir}")
+    raw = path.read_text()
+    data = json.loads(raw)
+    old_id = str(data.get("id") or run_dir.name)
+    cost = data.get("cost") or {}
+    job = Job(run_dir, data.get("sample") or run_dir.name,
+              Path(data.get("source") or run_dir.name),
+              float(data.get("fps") or DEFAULT_FPS),
+              float(cost.get("budget_usd") or DEFAULT_MAX_COST),
+              data.get("concepts") or list(DEFAULT_CONCEPTS),
+              status=data.get("status") or "done",
+              window_s=float(data.get("window_s") or DEFAULT_WINDOW_S))
+    if old_id != run_dir.name:
+        data = json.loads(raw.replace(f"runs/{old_id}/", f"runs/{run_dir.name}/"))
+    data["id"] = run_dir.name
+    job.data = data
+    return job, old_id
+
+
+def redraw_overlay(run_dir: Path) -> dict:
+    """Rebuild overlay.mp4 from a finished run's saved tracks and labels.
+
+    SAM's `<concept>.txt`, stage-2 `classified.json` and the preprocessed
+    `input.mp4` are all on disk, so this never calls `api_key()` and builds no
+    client: a run whose overlay was skipped, or drawn by an older renderer, gets
+    a current one and job.json finally names the file it plays.
+    """
+    job, old_id = load_run(run_dir)
+    video = job.dir / "input.mp4"
+    if not video.exists():
+        raise SystemExit(f"{video} is missing — the overlay draws on the preprocessed clip")
+    if not (job.dir / "classified.json").exists():
+        raise SystemExit(f"{job.dir}/classified.json is missing — nothing to colour by")
+    job.stage("overlay", "running", "redrawing from saved tracks (no model calls)")
+    info = render_overlay(job, job.dir, video, float(job.data["fps"]))
+    job.stage("overlay", "done",
+              f"{info['frames']} frames · {info['seconds']} s · {info['mb']:.1f} MB")
+    report = job.dir / "report.json"
+    if old_id != job.dir.name and report.exists():
+        text = report.read_text()
+        fixed = text.replace(f"runs/{old_id}/", f"runs/{job.dir.name}/")
+        if fixed != text:
+            report.write_text(fixed)
+    artifacts = job.data.setdefault("artifacts", {})
+    artifacts["video"] = rel(video)
+    artifacts["overlay"] = rel(job.dir / "overlay.mp4")
+    if report.exists():
+        artifacts.setdefault("report", rel(report))
+    job.log("overlay", "info",
+            f"overlay redrawn from {info['frames']} saved frames — no model call, no cost")
+    job.save()
+    return job.data
+
+
 # ---------------------------------------------------------------- job
 
 def describe_tool(step: dict) -> str:
@@ -864,7 +933,7 @@ def run_job(job: Job, *, ruleset: Path | None = None, lang: str = "en",
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("video", type=Path)
+    ap.add_argument("video", type=Path, nargs="?")
     ap.add_argument("--run", type=Path, help="run dir (default runs/<timestamp>-<stem>)")
     ap.add_argument("--fps", type=float, default=DEFAULT_FPS)
     ap.add_argument("--concepts", default=",".join(DEFAULT_CONCEPTS),
@@ -891,8 +960,22 @@ def main() -> None:
                          "reusing muse_raw (needed after a rule change that moves representative frames)")
     ap.add_argument("--dry-run", action="store_true",
                     help="preprocess + cost estimate only, no API call")
+    ap.add_argument("--overlay-only", action="store_true",
+                    help="with --run: redraw overlay.mp4 from that run's saved tracks and labels "
+                         "(no model call, no cost) and point job.json at the file")
     args = ap.parse_args()
 
+    if args.overlay_only:
+        if not args.run:
+            sys.exit("--overlay-only needs --run <existing run dir>")
+        run_dir = args.run.expanduser().resolve()
+        data = redraw_overlay(run_dir)
+        info = data.get("artifacts") or {}
+        print(f"-> {run_dir} · {data['status']} · overlay {info.get('overlay')}")
+        return
+
+    if not args.video:
+        sys.exit("a video is required (or --overlay-only --run <run dir>)")
     src = args.video.expanduser().resolve()
     if not src.exists():
         sys.exit(f"no such video: {src}")

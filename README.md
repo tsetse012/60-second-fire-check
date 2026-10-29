@@ -4,9 +4,10 @@ Walk a building corridor with your phone for a minute. Get a fire-safety self-in
 
 Built for the Meta Global AI Developer Hackathon 2026 (Indie Dev track).
 
-**Status: day 1 — stage 4.** SAM tracks generic objects, Muse Spark labels each track, an inspection
-agent re-opens the footage through tools before it files the checklist, and a local web app
-(`app/`) runs the whole thing from a browser: upload → live processing → report.
+**Status: stages 1–8 done, stage 9 (public demo) in progress.** Blind clipboard count on the same
+items: 14/18. SAM tracks generic objects, Muse Spark labels each track, an inspection agent re-opens
+the footage through tools before it files the checklist, and a local web app (`app/`) runs the whole
+thing from a browser: upload → live processing → report.
 
 ## Run the demo
 
@@ -34,6 +35,26 @@ timestamp seeks to the same second in the overlay. Artefacts land in `runs/<id>/
 outputs plus `overlay.mp4` (boxes coloured by label: green fire equipment, red issue, amber needs a
 person, grey not fire equipment; people are blurred and never labelled) and `job.json` (per-stage
 status, timing, cost estimate, log).
+
+Redrawing an overlay that was skipped, or drawn by an older renderer, needs no model call:
+
+```bash
+uv run pipeline/run_all.py --overlay-only --run runs/<id>   # SAM text + classified.json -> overlay.mp4
+```
+
+### Public mode (hackathon review link)
+
+`FIRECHECK_PUBLIC=1` turns the server into a review link: the finished runs named in
+`FIRECHECK_SHOWCASE` open for anyone with no model call, and a new upload needs the shared
+`UPLOAD_PASSCODE` (from the submission notes) and counts against a daily budget
+(`MAX_RUNS_PER_DAY`, default 4, Asia/Seoul; `MAX_RUNS_TOTAL`, default 15). One video runs at a time,
+so a second upload gets a 429 rather than a queue. `/runs/<id>/` stops being a dump of the run
+directory — only `report.json`, `job.json`, `overlay.mp4`, `crops/` and `agent_frames/` for a
+showcase or uploaded run are served, so the unblurred `input.mp4`, the raw SAM streams and the model
+dumps never leave the server; paths inside the JSON are rewritten before they are sent. Uploaded
+clips go to Meta's model API, so the page asks people not to upload footage with people in it. With
+the flag unset nothing changes: the local demo behaves exactly as before. Image build, run command
+and showcase packing: `deploy/README.md`.
 
 ## Pipeline
 
